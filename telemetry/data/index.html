@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta charset="UTF-8"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css"
+   integrity="sha512-xwE/Az9zrjBIphAcBb3F6JVqxf46+CDLwfLMHloNu6KEQCAWi6HcDUbeOfBIptF7tcCzusKFjFw2yuvEpDL9wQ=="
+   crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"
+   integrity="sha512-gZwIG9x3wUXg2hdXF6+rVkLF/0Vi9U8D2Ntg4Ga5I5BZpVkVxlJWbSQtXPSiUTtC0TjtGOmxa1AJPuV0CPthew=="
+   crossorigin=""></script>
+<style>
+#map { height: 500px; }
+</style>
+<title>Telemetry</title>
+</head>
+
+<body>
+<h1>Telemetry</h1>
+<table>
+<thead><tr><th>Physical ID</th><th>Sensor ID</th><th>Name</th><th>Value</th><th>Min</th><th>Max</th></tr></thead>
+<tbody id="sensors"></tbody>
+</table>
+<div id="map"></div>
+
+<script type="text/javascript">
+hex = function(s) {
+	return parseInt(s, 16);
+};
+
+const hasL = (typeof L != 'undefined')
+if (hasL) {
+	map = L.map('map').setView([0, 0], 3);
+	const tileUrl = '%MAP_TILES%';
+	const apiKey = '%MAP_API_KEY%';
+	attribution = '';
+	const osmAttribution = 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>';
+	if (tileUrl.indexOf('.mapbox.com') >= 0) {
+		attribution = osmAttribution + ', Imagery © <a href="https://www.mapbox.com/">Mapbox</a>';
+	} else if (tileUrl.indexOf('.thunderforest.com') >= 0) {
+		attribution = osmAttribution + ', Imagery © <a href="https://www.thunderforest.com/">Thunderforest</a>';
+	}
+	L.tileLayer(tileUrl, {
+		attribution: attribution,
+		maxZoom: 18,
+		apikey: apiKey
+	}).addTo(map);
+	path = L.polyline([], {color: 'red'}).addTo(map);
+}
+
+updateSensor = function(sensor) {
+	const id = sensor.physicalId+'/'+sensor.sensorId;
+	let row = document.getElementById(id);
+	if (!row) {
+		const table = document.getElementById('sensors');
+		let idx = -1;
+		for (let i=0; i<table.rows.length; i++) {
+			if (id < table.rows.item(i).id) {
+				idx = i;
+				break;
+			}
+		}
+		row = table.insertRow(idx);
+		row.id = id;
+		row.dataset.physicalId = sensor.physicalId;
+		row.dataset.sensorId = sensor.sensorId;
+		row.dataset.name = sensor.name;
+		row.dataset.unit = sensor.unit;
+		row.dataset.value = sensor.value;
+		row.insertCell(-1).innerHTML = sensor.physicalId;
+		row.insertCell(-1).innerHTML = sensor.sensorId;
+		row.insertCell(-1).innerHTML = sensor.name;
+		const value = sensor.value.toString()+sensor.unit;
+		row.insertCell(-1).innerHTML = value;
+		row.insertCell(-1)
+		row.insertCell(-1)
+	} else {
+		row.dataset.value = sensor.value;
+		const value = sensor.value.toString()+row.dataset.unit;
+		row.cells.item(3).innerHTML = value;
+		if (typeof sensor.value === 'number') {
+			if (!('minValue' in row.dataset) || sensor.value < row.dataset.minValue) {
+				row.cells.item(4).innerHTML = value;
+				row.dataset.minValue = sensor.value;
+			}
+			if (!('maxValue' in row.dataset) || sensor.value > row.dataset.maxValue) {
+				row.cells.item(5).innerHTML = value;
+				row.dataset.maxValue = sensor.value;
+			}
+		}
+	}
+
+	if (hasL) {
+		if (hex(sensor.sensorId) >= hex('0x0800') && hex(sensor.sensorId) <= hex('0x080F')) {
+			// GPS
+			const current = L.latLng(sensor.value[1], sensor.value[0]);
+			let addAsNext;
+			if (!path.isEmpty()) {
+				const points = path.getLatLngs();
+				const prev = points[points.length-1];
+				if (current.distanceTo(prev) > 1.0) {
+					addAsNext = true;
+				}
+			} else {
+				addAsNext = true;
+			}
+			if (addAsNext) {
+				path.addLatLng(current);
+				map.flyTo(current, 17, {animate: true});
+			}
+		}
+	}
+};
+
+fetch("http://"+window.location.hostname+"/sensors")
+	.then(response => response.json())
+	.then(data => {
+		for (const sensor of data.sensors) {
+			updateSensor(sensor);
+		}
+
+		ws = new WebSocket("ws://"+window.location.hostname+"/ws");
+		ws.onmessage = function(evt) {
+			const sensor = JSON.parse(evt.data);
+			updateSensor(sensor);
+		};
+	});
+</script>
+<br/>
+<div><a href="settings.html">Settings</a></div>
+</body>
+</html>

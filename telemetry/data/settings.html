@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta charset="UTF-8"/>
+<title>Settings</title>
+</head>
+
+<body>
+<h1>Settings</h1>
+<form method="post">
+<h2>Outputs</h2>
+<h3>USB</h3>
+<div>
+Mode:
+<input type="radio" name="usb_mode" value="disabled" %USB_DISABLED%>Disabled</input>
+<input type="radio" name="usb_mode" value="passthru" %USB_PASSTHRU%>Pass-thru</input>
+<input type="radio" name="usb_mode" value="filter" %USB_FILTER%>Filter</input>
+</div>
+<h3>Bluetooth serial</h3>
+<div>
+Name:
+<input type="text" name="bt_name" size="17" maxlength="16" value="%BT_NAME%"/>
+</div>
+<div>
+Mode:
+<input type="radio" name="bt_mode" value="disabled" %BT_DISABLED%>Disabled</input>
+<input type="radio" name="bt_mode" value="passthru" %BT_PASSTHRU%>Pass-thru</input>
+<input type="radio" name="bt_mode" value="filter" %BT_FILTER%>Filter</input>
+</div>
+<h3>BLE</h3>
+<div>
+Name:
+<input type="text" name="ble_name" size="17" maxlength="16" value="%BLE_NAME%"/>
+</div>
+<div>
+Mode:
+<input type="radio" name="ble_mode" value="disabled" %BLE_DISABLED%>Disabled</input>
+<input type="radio" name="ble_mode" value="passthru" %BLE_PASSTHRU%>Pass-thru</input>
+<input type="radio" name="ble_mode" value="filter" %BLE_FILTER%>Filter</input>
+</div>
+<h2>Web</h2>
+<h3>WiFi</h3>
+<div>
+WiFi access point hostname: <input type="text" name="ap_hostname" size="17" maxlength="16" value="%AP_HOSTNAME%"/>
+</div>
+<div>
+WiFi access point credentials:
+<input type="text" name="ap_ssid" size="33" maxlength="32" value="%AP_SSID%"/>
+<input type="password" name="ap_password" size="17" maxlength="16" value="%AP_PASSWORD%"/>
+</div>
+<div>
+WiFi client hostname: <input type="text" name="hostname" size="17" maxlength="16" value="%HOSTNAME%"/>
+</div>
+<div>
+WiFi client credentials:
+<input type="text" name="remote_ssid" size="33" maxlength="32" value="%REMOTE_SSID%"/>
+<input type="password" name="remote_password" size="17" maxlength="16" value="%REMOTE_PASSWORD%"/>
+</div>
+<h3>Map</h3>
+<div>
+Tiles: <input type="url" name="map_tiles" size="64" maxlength="127" value="%MAP_TILES%" list="tileList"/>
+<datalist id="tileList">
+<option value="https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v11/tiles/{z}/{x}/{y}{r}?access_token={apikey}"/>
+<option value="https://tile.thunderforest.com/neighbourhood/{z}/{x}/{y}{r}.png?apikey={apikey}"/>
+</datalist>
+</div>
+<div>
+API key: <input type="text" name="map_api_key" size="64" maxlength="127" value="%MAP_API_KEY%"/>
+</div>
+<h2>Misc</h2>
+<div>
+Internal sensors: <input type="checkbox" name="internal_sensors" %INTERNAL_SENSORS%/>
+</div>
+<br/>
+<input type="submit" value="Save"/>
+</form>
+<div style="text-align: center; color: green; font-size: 125%%">%STATUS%</div>
+<br/>
+<div><a href="index.html">Telemetry</a></div>
+</body>
+</html>
