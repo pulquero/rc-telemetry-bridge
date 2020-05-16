@@ -127,6 +127,18 @@ fetch("http://"+window.location.hostname+"/sensors")
 	});
 </script>
 <br/>
+<div><a id="gpsData" href="#">GPS data</a></div>
+<script type="text/javascript">
+document.getElementById('gpsData').onclick = function(evt) {
+	let data = '';
+	const points = path.getLatLngs();
+	for (let i=0; i<points.length; i++) {
+		data += points[i].lng+', '+points[i].lat+'\n';
+	}
+	evt.target.href = URL.createObjectURL(new Blob([data], {type: 'text/csv'}));
+	return true;
+};
+</script>
 <div><a href="settings.html">Settings</a></div>
 </body>
 </html>
