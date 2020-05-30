@@ -15,6 +15,8 @@
 #define BLE_BUFFER_SIZE 20
 #define PHYSICAL_SENSOR_ID 0x19
 #define TOUCH_THRESHOLD 35
+#define MIN_TOUCH_TIME 307
+#define TOUCH_RESET_TIME 1013
 #define RX_PIN 16
 #define WIFI_STA_TOUCH_PIN 13
 #define WIFI_AP_TOUCH_PIN 14
@@ -23,7 +25,7 @@
 #define WIFI_AP_LED_PIN 18 // yellow
 #define BLE_ADVERT_LED_PIN 21 // blue
 #define PACKET_LED_PIN 32 // red
-#define WS_LED_PIN 33 // white
+#define WEB_LED_PIN 33 // white
 
 static const IPAddress localHost(192, 168, 31, 1);
 static const IPAddress gateway(192, 168, 31, 1);
@@ -35,7 +37,7 @@ static BLECharacteristic* bleChar;
 static bool bleIsAdvertising = false;
 
 static uint32_t serialPacketCount = 0;
-static uint32_t wsMsgCount = 0;
+static uint32_t webMsgCount = 0;
 
 static const uint8_t touchPins[] = {WIFI_STA_TOUCH_PIN, BLE_ADVERT_TOUCH_PIN, WIFI_AP_TOUCH_PIN};
 static Preferences preferences;
@@ -110,7 +112,7 @@ void setup() {
   pinMode(WIFI_STA_LED_PIN, OUTPUT);
   pinMode(WIFI_AP_LED_PIN, OUTPUT);
   pinMode(BLE_ADVERT_LED_PIN, OUTPUT);
-  pinMode(WS_LED_PIN, OUTPUT);
+  pinMode(WEB_LED_PIN, OUTPUT);
   pinMode(PACKET_LED_PIN, OUTPUT);
 }
 
@@ -189,14 +191,14 @@ void loop() {
   } else {
     digitalWrite(PACKET_LED_PIN, LOW);
   }
-  if (wsMsgCount > 0 && ledCounter > 200 && ledCounter < 300) {
-    static uint32_t lastWsMsgCount = 0;
-    if (wsMsgCount != lastWsMsgCount) {
-      digitalWrite(WS_LED_PIN, HIGH);
-      lastWsMsgCount = wsMsgCount;
+  if (webMsgCount > 0 && ledCounter > 200 && ledCounter < 300) {
+    static uint32_t lastWebMsgCount = 0;
+    if (webMsgCount != lastWebMsgCount) {
+      digitalWrite(WEB_LED_PIN, HIGH);
+      lastWebMsgCount = webMsgCount;
     }
   } else {
-    digitalWrite(WS_LED_PIN, LOW);
+    digitalWrite(WEB_LED_PIN, LOW);
   }
   if (bleIsAdvertising) {
     digitalWrite(BLE_ADVERT_LED_PIN, ledCounter > 300 ? HIGH : LOW);
@@ -230,26 +232,35 @@ void loop() {
 
 void checkButtons() {
   static uint8_t buttonDown = 0;
+  static uint32_t sampleSum = 0;
+  static uint16_t sampleCount = 0;
   static uint32_t timerStart = 0;
   if (buttonDown == 0) {
-    if ((millis() - timerStart) > 517) {
+    if ((millis() - timerStart) > TOUCH_RESET_TIME) {
       for (int i=0; i<sizeof(touchPins)/sizeof(touchPins[0]); i++) {
-        if (touchRead(touchPins[i]) < TOUCH_THRESHOLD) {
+        uint16_t v = touchRead(touchPins[i]);
+        if (v < TOUCH_THRESHOLD) {
           buttonDown = touchPins[i];
+          sampleSum = v;
+          sampleCount = 1;
           timerStart = millis();
           break;
         }
       }
     }
   } else {
-    if (touchRead(buttonDown) < TOUCH_THRESHOLD) {
-      if ((millis() - timerStart) > 303) {
+    sampleSum += touchRead(buttonDown);
+    sampleCount++;
+    // check average is still below button down threshold
+    if (sampleSum/sampleCount < TOUCH_THRESHOLD) {
+      if ((millis() - timerStart) > MIN_TOUCH_TIME) {
         if (handleButton(buttonDown)) {
           timerStart = millis();
         }
         buttonDown = 0;
       }
     } else {
+      // button not down long enough
       buttonDown = 0;
     }
   }
@@ -337,8 +348,8 @@ void processSensorPacket(uint8_t physicalId, uint16_t sensorId, uint32_t sensorD
   Sensor* sensor = telemetry.updateSensor(physicalId, sensorId, sensorData);
   if (sensor != nullptr) {
     if ((sensor->lastUpdated - sensor->lastSent) > getSensorUpdateRate(sensorId)) {
-      if (wsEmitSensor(*sensor)) {
-        wsMsgCount++;
+      if (webEmitSensor(*sensor)) {
+        webMsgCount++;
         sensor->lastSent = millis();
       }
     }

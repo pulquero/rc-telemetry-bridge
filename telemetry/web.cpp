@@ -214,7 +214,7 @@ void sendSettings(AsyncWebServerRequest* request) {
   request->send(SPIFFS, "/settings.html", "text/html", false, settingsTemplateProcessor);
 }
 
-bool wsEmitSensor(const Sensor& sensor) {
+bool webEmitSensor(const Sensor& sensor) {
   static uint32_t lastEmit = 0;
   if (webSocket.count() > 0 && (millis() - lastEmit) > WS_EMIT_RATE) {
     char minJson[JSON_BUFFER_SIZE];

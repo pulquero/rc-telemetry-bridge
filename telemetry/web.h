@@ -10,6 +10,6 @@
 void webBegin(Telemetry* telemetry);
 void webStop();
 void webLoop();
-bool wsEmitSensor(const Sensor& sensor);
+bool webEmitSensor(const Sensor& sensor);
 
 #endif
