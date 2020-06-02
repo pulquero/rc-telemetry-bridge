@@ -114,6 +114,8 @@ void setup() {
   pinMode(BLE_ADVERT_LED_PIN, OUTPUT);
   pinMode(WEB_LED_PIN, OUTPUT);
   pinMode(PACKET_LED_PIN, OUTPUT);
+
+  LOGMEM();
 }
 
 void write(uint8_t* data, uint8_t len, SerialMode mode) {
@@ -309,6 +311,11 @@ bool handleButton(uint8_t buttonId) {
         WiFi.begin(telemetry.config.wifi.client.remote.ssid, telemetry.config.wifi.client.remote.password);
         webBegin(&telemetry);
         LOGD("Started WiFi station");
+        return true;
+      } else {
+        webStop();
+        WiFi.mode(WIFI_OFF);
+        LOGD("Stopped WiFi station");
         return true;
       }
       break;

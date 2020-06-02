@@ -19,33 +19,48 @@ static const String settingsTemplateProcessor(const String& var);
 
 static Telemetry* _telemetry;
 
-static const String empty = String();
-static AsyncWebServer webServer(80);
-static AsyncWebSocket webSocket("/ws");
+static const String empty("");
+static AsyncWebServer* webServer = nullptr;
+static AsyncWebSocket* webSocket = nullptr;
 static bool isWebRunning = false;
 
 void webBegin(Telemetry* telemetry) {
+  if (!webServer) {
+    webServer = new AsyncWebServer(80);
+    webSocket = new AsyncWebSocket("/ws");
+    webSocket->onEvent(wsEventHandler);
+    // first match wins
+    webServer->addHandler(webSocket);
+    webServer->on("/sensors", sendJson);
+    webServer->on("/settings.html", sendSettings);
+    webServer->serveStatic("/", SPIFFS, "/").setDefaultFile("index.html").setTemplateProcessor(indexTemplateProcessor);
+  }
   if (!isWebRunning) {
     _telemetry = telemetry;
     SPIFFS.begin();
-    webSocket.onEvent(wsEventHandler);
-    // first match wins
-    webServer.addHandler(&webSocket);
-    webServer.on("/sensors", sendJson);
-    webServer.on("/settings.html", sendSettings);
-    webServer.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html").setTemplateProcessor(indexTemplateProcessor);
-    webServer.begin();
+    webServer->begin();
     isWebRunning = true;
   }
+  LOGMEM();
 }
 
 void webStop() {
   if (isWebRunning) {
-    webServer.end();
+    webServer->end();
     SPIFFS.end();
     _telemetry = nullptr;
     isWebRunning = false;
   }
+  /*
+   * currently causes CORRUPT HEAP: Bad head
+  if (webServer) {
+    delete webServer;
+    delete webSocket;
+    webSocket = nullptr;
+    webServer = nullptr;
+  }
+  */
+  LOGMEM();
 }
 
 void wsEventHandler(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len) {
@@ -73,8 +88,8 @@ const String indexTemplateProcessor(const String& var) {
 
 void webLoop() {
   static uint32_t lastCleanup = 0;
-  if ((millis() - lastCleanup) > 500) {
-    webSocket.cleanupClients();
+  if (webSocket && (millis() - lastCleanup) > 500) {
+    webSocket->cleanupClients();
     lastCleanup = millis();
   }
 }
@@ -103,7 +118,7 @@ void sendJson(AsyncWebServerRequest* request) {
 static String _status = empty;
 
 const String settingsTemplateProcessor(const String& var) {
-  static const String checked = String("checked");
+  static const String checked("checked");
   if (var == "USB_DISABLED") {
     return _telemetry->config.usb.mode == MODE_DISABLED ? checked : empty;
   } else if (var == "USB_PASSTHRU") {
@@ -152,7 +167,7 @@ const String settingsTemplateProcessor(const String& var) {
 }
 
 void sendSettings(AsyncWebServerRequest* request) {
-  static const String savedStatus = String("Saved");
+  static const String savedStatus("Saved");
   _status = empty;
   int numParams = request->params();
   if (numParams > 0) {
@@ -216,7 +231,7 @@ void sendSettings(AsyncWebServerRequest* request) {
 
 bool webEmitSensor(const Sensor& sensor) {
   static uint32_t lastEmit = 0;
-  if (webSocket.count() > 0 && (millis() - lastEmit) > WS_EMIT_RATE) {
+  if (webSocket && webSocket->count() > 0 && (millis() - lastEmit) > WS_EMIT_RATE) {
     char minJson[JSON_BUFFER_SIZE];
     int len = writeSensorJson(minJson, sensor, false);
     if (len > JSON_BUFFER_SIZE) {
@@ -224,7 +239,7 @@ bool webEmitSensor(const Sensor& sensor) {
     }
     int16_t idx = sensor._index;
     bool dataSent = false;
-    for (AsyncWebSocketClient* c : webSocket.getClients()) {
+    for (AsyncWebSocketClient* c : webSocket->getClients()) {
       if (c->_tempObject && !c->queueIsFull()) {
         if (((bool*)c->_tempObject)[idx]) {
           c->text(minJson);
