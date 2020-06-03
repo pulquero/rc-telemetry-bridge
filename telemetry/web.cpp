@@ -1,19 +1,17 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
+#include "json.h"
 #include "web.h"
 #include "debug.h"
 
 #define JSON_BUFFER_SIZE 256
-#define JSON_VALUE_BUFFER_SIZE 128
 #define WS_EMIT_RATE 300
 
 static void wsEventHandler(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len);
 static void sendJson(AsyncWebServerRequest* request);
 static void sendSettings(AsyncWebServerRequest* request);
 static int writeSensorJson(char* out, const Sensor& sensor, bool all);
-static int writeFlightModeArray(char* out, uint32_t modes);
-static int writeGpsStateArray(char* out, uint32_t modes);
 static const String indexTemplateProcessor(const String& var);
 static const String settingsTemplateProcessor(const String& var);
 
@@ -88,7 +86,7 @@ const String indexTemplateProcessor(const String& var) {
 
 void webLoop() {
   static uint32_t lastCleanup = 0;
-  if (webSocket && (millis() - lastCleanup) > 500) {
+  if (isWebRunning && (millis() - lastCleanup) > 500) {
     webSocket->cleanupClients();
     lastCleanup = millis();
   }
@@ -102,7 +100,7 @@ void sendJson(AsyncWebServerRequest* request) {
     char json[JSON_BUFFER_SIZE];
     int len = writeSensorJson(json, _telemetry->sensors[i], true);
     if (len > JSON_BUFFER_SIZE) {
-      LOGE("JSON buffer exceeded!");
+      LOGE("JSON buffer size exceeded! (%d)", len);
     }
     if (isFirst) {
       isFirst = false;
@@ -157,6 +155,14 @@ const String settingsTemplateProcessor(const String& var) {
     return _telemetry->config.map.tiles;
   } else if (var == "MAP_API_KEY") {
     return _telemetry->config.map.apiKey;
+  } else if (var == "MQTT_BROKER") {
+    return _telemetry->config.mqtt.broker;
+  } else if (var == "MQTT_PORT") {
+    static char szPort[8];
+    itoa(_telemetry->config.mqtt.port, szPort, 10);
+    return szPort;
+  } else if (var == "MQTT_TOPIC") {
+    return _telemetry->config.mqtt.topic;
   } else if (var == "INTERNAL_SENSORS") {
     return _telemetry->config.internalSensors.enableHallEffect ? checked : empty;
   } else if (var == "STATUS") {
@@ -219,6 +225,12 @@ void sendSettings(AsyncWebServerRequest* request) {
         strncpy_s(_telemetry->config.map.tiles, value.c_str(), URL_SIZE);
       } else if (name == "map_api_key") {
         strncpy_s(_telemetry->config.map.apiKey, value.c_str(), API_KEY_SIZE);
+      } else if (name == "mqtt_broker") {
+        strncpy_s(_telemetry->config.mqtt.broker, value.c_str(), ENDPOINT_SIZE);
+      } else if (name == "mqtt_port") {
+        _telemetry->config.mqtt.port = atoi(value.c_str());
+      } else if (name == "mqtt_topic") {
+        strncpy_s(_telemetry->config.mqtt.topic, value.c_str(), TOPIC_SIZE);
       } else if (name == "internal_sensors") {
         _telemetry->config.internalSensors.enableHallEffect = (value == "on");
       }
@@ -231,11 +243,11 @@ void sendSettings(AsyncWebServerRequest* request) {
 
 bool webEmitSensor(const Sensor& sensor) {
   static uint32_t lastEmit = 0;
-  if (webSocket && webSocket->count() > 0 && (millis() - lastEmit) > WS_EMIT_RATE) {
+  if (isWebRunning && webSocket->count() > 0 && (millis() - lastEmit) > WS_EMIT_RATE) {
     char minJson[JSON_BUFFER_SIZE];
     int len = writeSensorJson(minJson, sensor, false);
     if (len > JSON_BUFFER_SIZE) {
-      LOGE("WS buffer exceeded!");
+      LOGE("WS buffer size exceeded! (%d)", len);
     }
     int16_t idx = sensor._index;
     bool dataSent = false;
@@ -248,7 +260,7 @@ bool webEmitSensor(const Sensor& sensor) {
           char fullJson[JSON_BUFFER_SIZE];
           int len = writeSensorJson(fullJson, sensor, true);
           if (len > JSON_BUFFER_SIZE) {
-            LOGE("WS buffer exceeded!");
+            LOGE("WS buffer size exceeded! (%d)", len);
           }
           c->text(fullJson);
           dataSent = true;
@@ -264,116 +276,29 @@ bool webEmitSensor(const Sensor& sensor) {
 }
 
 int writeSensorJson(char* out, const Sensor& sensor, bool all) {
+  char value[JSON_VALUE_BUFFER_SIZE];
+  int len = jsonWriteSensorValue(value, sensor);
+  if (len > JSON_VALUE_BUFFER_SIZE-1) {
+    LOGE("Value of sensor %04X exceeded buffer size!", sensor.sensorId);
+  }
   const char *name;
   const char *unit;
-  char value[JSON_VALUE_BUFFER_SIZE];
   if (sensor.info) {
     name = sensor.info->name;
     unit = sensor.info->getUnitName();
     if (sensor.sensorId == FLIGHT_MODE_ID) {
-      int len = writeFlightModeArray(value, sensor.value.numeric);
-      if (len > JSON_VALUE_BUFFER_SIZE) {
-        LOGE("Flight mode array exceeded value buffer!");
-      }
       unit = "";
     } else if (sensor.sensorId == GPS_STATE_ID) {
-      int len = writeGpsStateArray(value, sensor.value.numeric);
-      if (len > JSON_VALUE_BUFFER_SIZE) {
-        LOGE("GPS state array exceeded value buffer!");
-      }
       unit = "";
-    } else if (sensor.info->unit == UNIT_GPS) {
-      char lon[16], lat[16];
-      dtostrf(sensor.value.gps.longitude/10000.0/60.0, 9, 7, lon);
-      dtostrf(sensor.value.gps.latitude/10000.0/60.0, 9, 7, lat);
-      sprintf(value, "[%s, %s]", lon, lat);
-    } else {
-      if (sensor.info->precision) {
-        double v = sensor.value.numeric;
-        for (int i=0; i<sensor.info->precision; i++) {
-          v /= 10.0;
-        }
-        dtostrf(v, 2+sensor.info->precision, sensor.info->precision, value);
-      } else {
-        itoa(sensor.value.numeric, value, 10);
-      }
     }
   } else {
     // unknown sensor
-    name = "";
+    name = "Custom";
     unit = "";
-    itoa(sensor.value.numeric, value, 10);
   }
   if (all) {
     return sprintf(out, "{\"physicalId\": \"%02X\", \"sensorId\": \"%04X\", \"name\": \"%s\", \"value\": %s, \"unit\": \"%s\"}", sensor.physicalId, sensor.sensorId, name, value, unit);
   } else {
     return sprintf(out, "{\"physicalId\": \"%02X\", \"sensorId\": \"%04X\", \"value\": %s}", sensor.physicalId, sensor.sensorId, value);
   }
-}
-
-int writeFlightModeArray(char* out, uint32_t modes) {
-  int pos = 0;
-  out[pos++] = '[';
-  uint32_t v = modes;
-  uint8_t flag = v % 10;
-  if (flag == 1) {
-    pos += sprintf(out+pos, "\"DISARMED\",");
-  } else if(flag == 2) {
-    pos += sprintf(out+pos, "\"CANT_ARM\",");
-  } else if(flag == 5) {
-    pos += sprintf(out+pos, "\"ARMED\",");
-  }
-  
-  v /= 10;
-  flag = v % 10;
-  if ((flag & 1) == 1) {
-    pos += sprintf(out+pos, "\"ANGLE\",");
-  }
-  if((flag & 2) == 2) {
-    pos += sprintf(out+pos, "\"HORIZON\",");
-  }
-  if((flag & 4) == 4) {
-    pos += sprintf(out+pos, "\"MANUAL\",");
-  }
-  
-  v /= 10;
-  flag = v % 10;
-  if ((flag & 1) == 1) {
-    pos += sprintf(out+pos, "\"HEADING\",");
-  }
-  if((flag & 2) == 2) {
-    pos += sprintf(out+pos, "\"NAV_ALTHOLD\",");
-  }
-  if((flag & 4) == 4) {
-    pos += sprintf(out+pos, "\"NAV_POSHOLD\",");
-  }
-  
-  v /= 10;
-  flag = v % 10;
-  if ((flag & 1) == 1) {
-    pos += sprintf(out+pos, "\"NAV_RTH\",");
-  }
-  if ((flag & 8) == 8) {
-    pos += sprintf(out+pos, "\"NAV_CRUISE\",");
-  } else if ((flag & 2) == 2) {
-    pos += sprintf(out+pos, "\"NAV_WP\",");
-  } else if ((flag & 4) == 4) {
-    pos += sprintf(out+pos, "\"HEADFREE\",");
-  }
-
-  out[pos-1] = ']';
-  return pos;
-}
-
-int writeGpsStateArray(char* out, uint32_t state) {
-  char* fix = "WAIT";
-  uint8_t flag = state/1000 % 10;
-  if (flag == 1) {
-    fix = "FIX";
-  } else if (flag == 3) {
-    fix = "HOME";
-  } else if (flag == 7) {
-    fix = "HOME RESET";
-  }
-  return sprintf(out, "[%d, %d, \"%s\"]", state % 100, (state/100) % 10, fix);
 }

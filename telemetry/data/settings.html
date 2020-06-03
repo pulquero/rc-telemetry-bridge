@@ -68,6 +68,14 @@ Tiles: <input type="url" name="map_tiles" size="64" maxlength="127" value="%MAP_
 <div>
 API key: <input type="text" name="map_api_key" size="64" maxlength="127" value="%MAP_API_KEY%"/>
 </div>
+<h2>MQTT</h2>
+<div>
+Broker: <input type="text" name="mqtt_broker" size="64" maxlength="127" value="%MQTT_BROKER%"/>
+Port: <input type="number" name="mqtt_port" value="%MQTT_PORT%" min="0" max="65535"/>
+</div>
+<div>
+Topic: <input type="text" name="mqtt_topic" size="32" maxlength="31" value="%MQTT_TOPIC%"/>
+</div>
 <h2>Misc</h2>
 <div>
 Internal sensors: <input type="checkbox" name="internal_sensors" %INTERNAL_SENSORS%/>

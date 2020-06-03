@@ -7,6 +7,7 @@
 #include "protocol.h"
 #include "telemetry.h"
 #include "web.h"
+#include "mqtt.h"
 
 #include "debug.h"
 
@@ -40,7 +41,6 @@ static uint32_t serialPacketCount = 0;
 static uint32_t webMsgCount = 0;
 
 static const uint8_t touchPins[] = {WIFI_STA_TOUCH_PIN, BLE_ADVERT_TOUCH_PIN, WIFI_AP_TOUCH_PIN};
-static Preferences preferences;
 static Telemetry telemetry;
 #define INCOMING_CAPACITY 20
 static uint8_t incoming[INCOMING_CAPACITY];
@@ -49,9 +49,10 @@ static uint8_t incomingWritePos = 0;
 
 static void checkButtons();
 static bool handleButton(uint8_t buttonId);
+static void stopWiFi();
 static void sendInternalSensors(bool includeStart);
 static uint16_t getSensorUpdateRate(uint16_t sensorId);
-static void loadPreferenceString(const char* key, char* value, int maxSize, const char* defaultValue);
+static void loadPreferenceString(Preferences& prefs, const char* key, char* value, int maxSize, const char* defaultValue);
 
 static bool btCongested = false;
 
@@ -229,6 +230,7 @@ void loop() {
     digitalWrite(WIFI_STA_LED_PIN, ledCounter > 200 && ledCounter < 300 ? HIGH : LOW);
   }
 
+  mqttLoop();
   webLoop();
 }
 
@@ -287,40 +289,50 @@ bool handleButton(uint8_t buttonId) {
       break;
     case WIFI_AP_TOUCH_PIN:
       if (WiFi.getMode() != WIFI_AP && WiFi.getMode() != WIFI_AP_STA) {
-        WiFi.mode(WIFI_AP_STA);
+        WiFi.enableAP(true);
         WiFi.softAPsetHostname(telemetry.config.wifi.ap.hostname);
-        WiFi.softAP(telemetry.config.wifi.ap.ssid, telemetry.config.wifi.ap.password);
-        WiFi.softAPConfig(localHost, gateway, subnet);
-        webBegin(&telemetry);
-        LOGD("Started WiFi AP");
-        return true;
+        if (WiFi.softAP(telemetry.config.wifi.ap.ssid, telemetry.config.wifi.ap.password)) {
+          WiFi.softAPConfig(localHost, gateway, subnet);
+          webBegin(&telemetry);
+          LOGD("Started WiFi AP: %d", WiFi.getMode());
+          return true;
+        } else {
+          LOGE("Failed to start WiFi AP");
+        }
       } else {
-        webStop();
-        WiFi.mode(WIFI_OFF);
-        LOGD("Stopped WiFi AP");
+        stopWiFi();
         return true;
       }
       break;
     case WIFI_STA_TOUCH_PIN:
-      if (!WiFi.isConnected()) {
-        if (WiFi.getMode() != WIFI_STA && WiFi.getMode() != WIFI_AP_STA) {
-          WiFi.mode(WIFI_STA);
-        }
+      if (WiFi.getMode() != WIFI_STA && WiFi.getMode() != WIFI_AP_STA) {
+        WiFi.enableSTA(true);
         WiFi.setHostname(telemetry.config.wifi.client.hostname);
         WiFi.setAutoReconnect(true);
-        WiFi.begin(telemetry.config.wifi.client.remote.ssid, telemetry.config.wifi.client.remote.password);
-        webBegin(&telemetry);
-        LOGD("Started WiFi station");
-        return true;
+        wl_status_t status = WiFi.begin(telemetry.config.wifi.client.remote.ssid, telemetry.config.wifi.client.remote.password);
+        if (status != WL_CONNECT_FAILED) {
+          mqttBegin(&telemetry);
+          webBegin(&telemetry);
+          LOGD("Started WiFi station: %d (%d)", WiFi.getMode(), status);
+          return true;
+        } else {
+          LOGE("Failed to start WiFi station");
+        }
       } else {
-        webStop();
-        WiFi.mode(WIFI_OFF);
-        LOGD("Stopped WiFi station");
+        stopWiFi();
         return true;
       }
       break;
   }
   return false;
+}
+
+void stopWiFi() {
+  webStop();
+  mqttStop();
+  WiFi.disconnect(true);
+  WiFi.softAPdisconnect(true);
+  LOGD("Stopped WiFi: %d", WiFi.getMode());
 }
 
 void processPollPacket(uint8_t physicalId) {
@@ -333,9 +345,10 @@ void sendInternalSensors(bool includeStart) {
   if (telemetry.config.internalSensors.enableHallEffect) {
     static uint32_t lastSent = 0;
     if ((millis() - lastSent) > 103 && (INCOMING_CAPACITY - incomingWritePos) > 18) {
-      incomingWritePos += writeSensorPacket(incoming+incomingWritePos, PHYSICAL_SENSOR_ID, HALL_EFFECT_ID, hallRead(), includeStart);
+      const uint32_t hallValue = hallRead();
+      incomingWritePos += writeSensorPacket(incoming+incomingWritePos, PHYSICAL_SENSOR_ID, HALL_EFFECT_ID, hallValue, includeStart);
       if (incomingWritePos > INCOMING_CAPACITY) {
-        LOGE("Incoming buffer exceeded!");
+        LOGE("Incoming buffer exceeded! (%d)", incomingWritePos);
       }
       lastSent = millis();
     }
@@ -347,7 +360,7 @@ void processSensorPacket(uint8_t physicalId, uint16_t sensorId, uint32_t sensorD
   if (telemetry.config.usb.mode == MODE_FILTER || telemetry.config.bt.mode == MODE_FILTER || telemetry.config.ble.mode == MODE_FILTER) {
     int packetSize = writeSensorPacket(sendBuffer, physicalId, sensorId, sensorData, true);
     if (packetSize > 20) {
-      LOGE("Send buffer exceeded!");
+      LOGE("Send buffer exceeded! (%d)", packetSize);
     }
     write(sendBuffer, packetSize, MODE_FILTER);
   }
@@ -355,7 +368,9 @@ void processSensorPacket(uint8_t physicalId, uint16_t sensorId, uint32_t sensorD
   Sensor* sensor = telemetry.updateSensor(physicalId, sensorId, sensorData);
   if (sensor != nullptr) {
     if ((sensor->lastUpdated - sensor->lastSent) > getSensorUpdateRate(sensorId)) {
-      if (webEmitSensor(*sensor)) {
+      bool webSent = webEmitSensor(*sensor);
+      bool mqttSent = mqttPublishSensor(*sensor);
+      if (webSent || mqttSent) {
         webMsgCount++;
         sensor->lastSent = millis();
       }
@@ -429,13 +444,14 @@ Sensor* Telemetry::getSensor(uint8_t physicalId, uint16_t sensorId) {
   return nullptr;
 }
 
-void loadPreferenceString(const char* key, char* value, int maxSize, const char* defaultValue = "") {
-  if (!preferences.getString(key, value, maxSize)) {
+void loadPreferenceString(Preferences& prefs, const char* key, char* value, int maxSize, const char* defaultValue = "") {
+  if (!prefs.getString(key, value, maxSize)) {
     strncpy_s(value, defaultValue, maxSize);
   }
 }
 
 void Telemetry::load() {
+  Preferences preferences;
   if (!preferences.begin("telem")) {
     LOGE("Could not open preferences!");
     return;
@@ -443,18 +459,21 @@ void Telemetry::load() {
   // emergency reset
   //preferences.clear();
   config.usb.mode = (SerialMode) preferences.getShort("usbMode", MODE_PASS_THRU);
-  loadPreferenceString("btName", config.bt.name, NAME_SIZE, "Telemetry BT");
+  loadPreferenceString(preferences, "btName", config.bt.name, NAME_SIZE, "Telemetry BT");
   config.bt.mode = (SerialMode) preferences.getShort("btMode", MODE_DISABLED);
-  loadPreferenceString("bleName", config.ble.name, NAME_SIZE, "Telemetry BLE");
+  loadPreferenceString(preferences, "bleName", config.ble.name, NAME_SIZE, "Telemetry BLE");
   config.ble.mode = (SerialMode) preferences.getShort("bleMode", MODE_FILTER);
-  loadPreferenceString("wifiApHostname", config.wifi.ap.hostname, NAME_SIZE, "telemetry");
-  loadPreferenceString("wifiApSsid", config.wifi.ap.ssid, SSID_SIZE, "Telemetry WiFi");
-  loadPreferenceString("wifiApPassword", config.wifi.ap.password, PASSWORD_SIZE);
-  loadPreferenceString("wifiHostname", config.wifi.client.hostname, NAME_SIZE, "telemetry");
-  loadPreferenceString("wifiStaSsid", config.wifi.client.remote.ssid, SSID_SIZE);
-  loadPreferenceString("wifiStaPassword", config.wifi.client.remote.password, PASSWORD_SIZE);
-  loadPreferenceString("mapTiles", config.map.tiles, URL_SIZE);
-  loadPreferenceString("mapApiKey", config.map.apiKey, API_KEY_SIZE);
+  loadPreferenceString(preferences, "wifiApHostname", config.wifi.ap.hostname, NAME_SIZE, "telemetry");
+  loadPreferenceString(preferences, "wifiApSsid", config.wifi.ap.ssid, SSID_SIZE, "Telemetry WiFi");
+  loadPreferenceString(preferences, "wifiApPassword", config.wifi.ap.password, PASSWORD_SIZE);
+  loadPreferenceString(preferences, "wifiHostname", config.wifi.client.hostname, NAME_SIZE, "telemetry");
+  loadPreferenceString(preferences, "wifiStaSsid", config.wifi.client.remote.ssid, SSID_SIZE);
+  loadPreferenceString(preferences, "wifiStaPassword", config.wifi.client.remote.password, PASSWORD_SIZE);
+  loadPreferenceString(preferences, "mapTiles", config.map.tiles, URL_SIZE);
+  loadPreferenceString(preferences, "mapApiKey", config.map.apiKey, API_KEY_SIZE);
+  loadPreferenceString(preferences, "mqttBroker", config.mqtt.broker, ENDPOINT_SIZE);
+  config.mqtt.port = preferences.getShort("mqttPort", 8883);
+  loadPreferenceString(preferences, "mqttTopic", config.mqtt.topic, TOPIC_SIZE);
   config.internalSensors.enableHallEffect = preferences.getBool("internalSensors", true);
   preferences.end();
 
@@ -468,9 +487,13 @@ void Telemetry::load() {
   LOGD("WiFi station password: '%s'", config.wifi.client.remote.password);
   LOGD("Map tiles: '%s'", config.map.tiles);
   LOGD("Map API key: '%s'", config.map.apiKey);
+  LOGD("MQTT broker: '%s'", config.mqtt.broker);
+  LOGD("MQTT port: %d", config.mqtt.port);
+  LOGD("MQTT topic: '%s'", config.mqtt.topic);
 }
 
 void Telemetry::save() {
+  Preferences preferences;
   if (!preferences.begin("telem")) {
     LOGE("Could not open preferences!");
     return;
@@ -488,6 +511,9 @@ void Telemetry::save() {
   preferences.putString("wifiStaPassword", config.wifi.client.remote.password);
   preferences.putString("mapTiles", config.map.tiles);
   preferences.putString("mapApiKey", config.map.apiKey);
+  preferences.putString("mqttBroker", config.mqtt.broker);
+  preferences.putShort("mqttPort", config.mqtt.port);
+  preferences.putString("mqttTopic", config.mqtt.topic);
   preferences.putBool("internalSensors", config.internalSensors.enableHallEffect);
   preferences.end();
 }

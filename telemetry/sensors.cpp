@@ -163,6 +163,7 @@ static const SensorInfo sensorInfos[] = {
   { FPV_ID, FPV_ID, 0, ZSTR_HDG, UNIT_DEGREE, 2 },
 #endif
   { HALL_EFFECT_ID, HALL_EFFECT_ID, 0, "Hall effect", UNIT_RAW, 0 },
+  { DIY_FIRST_ID, DIY_LAST_ID, 0, "Custom", UNIT_RAW, 0 },
   { 0, 0, 0, nullptr, UNIT_RAW, 0 } // sentinel
 };
 

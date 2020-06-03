@@ -35,6 +35,8 @@ enum SerialMode {
 #define NAME_SIZE 16
 #define URL_SIZE 128
 #define API_KEY_SIZE 128
+#define ENDPOINT_SIZE 64
+#define TOPIC_SIZE 32
 
 typedef struct {
   struct {
@@ -67,6 +69,11 @@ typedef struct {
     char tiles[URL_SIZE] = {'\0'};
     char apiKey[API_KEY_SIZE] = {'\0'};
   } map;
+  struct {
+    char broker[ENDPOINT_SIZE] = {'\0'};
+    uint16_t port;
+    char topic[TOPIC_SIZE] = {'\0'};
+  } mqtt;
   struct {
     bool enableHallEffect;
   } internalSensors;
