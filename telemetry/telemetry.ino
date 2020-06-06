@@ -49,7 +49,9 @@ static uint8_t incomingWritePos = 0;
 
 static void checkButtons();
 static bool handleButton(uint8_t buttonId);
-static void stopWiFi();
+static bool startWiFiAP();
+static bool startWiFiSTA();
+static bool stopWiFi();
 static void sendInternalSensors(bool includeStart);
 static uint16_t getSensorUpdateRate(uint16_t sensorId);
 static void loadPreferenceString(Preferences& prefs, const char* key, char* value, int maxSize, const char* defaultValue);
@@ -101,6 +103,13 @@ void setup() {
     bleAdvertising->addServiceUUID(SERVICE_UUID);
     bleAdvertising->setScanResponse(true);
     BLEDevice::startAdvertising();
+  }
+
+  if ((telemetry.config.wifi.mode & WIFI_AP)) {
+    startWiFiAP();
+  }
+  if ((telemetry.config.wifi.mode & WIFI_STA)) {
+    startWiFiSTA();
   }
 
 #ifndef DEBUG
@@ -289,50 +298,59 @@ bool handleButton(uint8_t buttonId) {
       break;
     case WIFI_AP_TOUCH_PIN:
       if (WiFi.getMode() != WIFI_AP && WiFi.getMode() != WIFI_AP_STA) {
-        WiFi.enableAP(true);
-        WiFi.softAPsetHostname(telemetry.config.wifi.ap.hostname);
-        if (WiFi.softAP(telemetry.config.wifi.ap.ssid, telemetry.config.wifi.ap.password)) {
-          WiFi.softAPConfig(localHost, gateway, subnet);
-          webBegin(&telemetry);
-          LOGD("Started WiFi AP: %d", WiFi.getMode());
-          return true;
-        } else {
-          LOGE("Failed to start WiFi AP");
-        }
+        return startWiFiAP();
       } else {
-        stopWiFi();
-        return true;
+        return stopWiFi();
       }
       break;
     case WIFI_STA_TOUCH_PIN:
       if (WiFi.getMode() != WIFI_STA && WiFi.getMode() != WIFI_AP_STA) {
-        WiFi.enableSTA(true);
-        WiFi.setHostname(telemetry.config.wifi.client.hostname);
-        WiFi.setAutoReconnect(true);
-        wl_status_t status = WiFi.begin(telemetry.config.wifi.client.remote.ssid, telemetry.config.wifi.client.remote.password);
-        if (status != WL_CONNECT_FAILED) {
-          mqttBegin(&telemetry);
-          webBegin(&telemetry);
-          LOGD("Started WiFi station: %d (%d)", WiFi.getMode(), status);
-          return true;
-        } else {
-          LOGE("Failed to start WiFi station");
-        }
+        return startWiFiSTA();
       } else {
-        stopWiFi();
-        return true;
+        return stopWiFi();
       }
       break;
   }
   return false;
 }
 
-void stopWiFi() {
+bool startWiFiAP() {
+  WiFi.enableAP(true);
+  WiFi.softAPsetHostname(telemetry.config.wifi.ap.hostname);
+  if (WiFi.softAP(telemetry.config.wifi.ap.ssid, telemetry.config.wifi.ap.password)) {
+    WiFi.softAPConfig(localHost, gateway, subnet);
+    webBegin(&telemetry);
+    LOGD("Started WiFi AP: %d", WiFi.getMode());
+    return true;
+  } else {
+    LOGE("Failed to start WiFi AP");
+    return false;
+  }
+}
+
+bool startWiFiSTA() {
+  WiFi.enableSTA(true);
+  WiFi.setHostname(telemetry.config.wifi.client.hostname);
+  WiFi.setAutoReconnect(true);
+  wl_status_t status = WiFi.begin(telemetry.config.wifi.client.remote.ssid, telemetry.config.wifi.client.remote.password);
+  if (status != WL_CONNECT_FAILED) {
+    mqttBegin(&telemetry);
+    webBegin(&telemetry);
+    LOGD("Started WiFi station: %d (%d)", WiFi.getMode(), status);
+    return true;
+  } else {
+    LOGE("Failed to start WiFi station");
+    return false;
+  }
+}
+
+bool stopWiFi() {
   webStop();
   mqttStop();
   WiFi.disconnect(true);
   WiFi.softAPdisconnect(true);
   LOGD("Stopped WiFi: %d", WiFi.getMode());
+  return true;
 }
 
 void processPollPacket(uint8_t physicalId) {
@@ -469,6 +487,7 @@ void Telemetry::load() {
   loadPreferenceString(preferences, "wifiHostname", config.wifi.client.hostname, NAME_SIZE, "telemetry");
   loadPreferenceString(preferences, "wifiStaSsid", config.wifi.client.remote.ssid, SSID_SIZE);
   loadPreferenceString(preferences, "wifiStaPassword", config.wifi.client.remote.password, PASSWORD_SIZE);
+  config.wifi.mode = (WiFiMode_t) preferences.getShort("wifiMode", WIFI_OFF);
   loadPreferenceString(preferences, "mapTiles", config.map.tiles, URL_SIZE);
   loadPreferenceString(preferences, "mapApiKey", config.map.apiKey, API_KEY_SIZE);
   loadPreferenceString(preferences, "mqttBroker", config.mqtt.broker, ENDPOINT_SIZE);
@@ -509,6 +528,7 @@ void Telemetry::save() {
   preferences.putString("wifiHostname", config.wifi.client.hostname);
   preferences.putString("wifiStaSsid", config.wifi.client.remote.ssid);
   preferences.putString("wifiStaPassword", config.wifi.client.remote.password);
+  preferences.putShort("wifiMode", config.wifi.mode);
   preferences.putString("mapTiles", config.map.tiles);
   preferences.putString("mapApiKey", config.map.apiKey);
   preferences.putString("mqttBroker", config.mqtt.broker);

@@ -1,6 +1,7 @@
 #ifndef telemetry_h
 #define telemetry_h
 
+#include <WiFiGeneric.h>
 #include "sensors.h"
 
 #define MAX_SENSORS 50
@@ -64,6 +65,7 @@ typedef struct {
         char password[PASSWORD_SIZE] = {'\0'};
       } remote;
     } client;
+    WiFiMode_t mode;
   } wifi;
   struct {
     char tiles[URL_SIZE] = {'\0'};

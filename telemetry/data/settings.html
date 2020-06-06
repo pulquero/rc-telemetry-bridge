@@ -57,6 +57,13 @@ WiFi client credentials:
 <input type="text" name="remote_ssid" size="33" maxlength="32" value="%REMOTE_SSID%"/>
 <input type="password" name="remote_password" size="17" maxlength="16" value="%REMOTE_PASSWORD%"/>
 </div>
+<div>
+Default:
+<input type="radio" name="wifi_mode" value="off" %WIFI_OFF%>Off</input>
+<input type="radio" name="wifi_mode" value="sta" %WIFI_STA%>Station (outbound)</input>
+<input type="radio" name="wifi_mode" value="ap" %WIFI_AP%>Access point (inbound)</input>
+<input type="radio" name="wifi_mode" value="ap_sta" %WIFI_AP_STA%>Access point and station</input>
+</div>
 <h3>Map</h3>
 <div>
 Tiles: <input type="url" name="map_tiles" size="64" maxlength="127" value="%MAP_TILES%" list="tileList"/>

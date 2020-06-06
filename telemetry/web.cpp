@@ -151,6 +151,14 @@ const String settingsTemplateProcessor(const String& var) {
     return _telemetry->config.wifi.client.remote.ssid;
   } else if (var == "REMOTE_PASSWORD") {
     return _telemetry->config.wifi.client.remote.password;
+  } else if (var == "WIFI_OFF") {
+    return _telemetry->config.wifi.mode == WIFI_OFF ? checked : empty;
+  } else if (var == "WIFI_STA") {
+    return _telemetry->config.wifi.mode == WIFI_STA ? checked : empty;
+  } else if (var == "WIFI_AP") {
+    return _telemetry->config.wifi.mode == WIFI_AP ? checked : empty;
+  } else if (var == "WIFI_AP_STA") {
+    return _telemetry->config.wifi.mode == WIFI_AP_STA ? checked : empty;
   } else if (var == "MAP_TILES") {
     return _telemetry->config.map.tiles;
   } else if (var == "MAP_API_KEY") {
@@ -221,6 +229,16 @@ void sendSettings(AsyncWebServerRequest* request) {
         strncpy_s(_telemetry->config.wifi.client.remote.ssid, value.c_str(), SSID_SIZE);
       } else if (name == "remote_password") {
         strncpy_s(_telemetry->config.wifi.client.remote.password, value.c_str(), PASSWORD_SIZE);
+      } else if (name == "wifi_mode") {
+        if (value == "sta") {
+          _telemetry->config.wifi.mode = WIFI_STA;
+        } else if (value == "ap") {
+          _telemetry->config.wifi.mode = WIFI_AP;
+        } else if (value == "ap_sta") {
+          _telemetry->config.wifi.mode = WIFI_AP_STA;
+        } else {
+          _telemetry->config.wifi.mode = WIFI_OFF;
+        }
       } else if (name == "map_tiles") {
         strncpy_s(_telemetry->config.map.tiles, value.c_str(), URL_SIZE);
       } else if (name == "map_api_key") {
