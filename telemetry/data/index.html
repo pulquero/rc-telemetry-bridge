@@ -9,8 +9,22 @@
 <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"
    integrity="sha512-gZwIG9x3wUXg2hdXF6+rVkLF/0Vi9U8D2Ntg4Ga5I5BZpVkVxlJWbSQtXPSiUTtC0TjtGOmxa1AJPuV0CPthew=="
    crossorigin=""></script>
+<script src="util.js"></script>
 <style>
-#map { height: 500px; }
+tbody td:nth-child(1) { text-align: center; }
+tbody td:nth-child(2) { text-align: center; }
+tbody td:nth-child(4) { text-align: right; }
+tbody td:nth-child(5) { text-align: right; }
+tbody td:nth-child(6) { text-align: right; }
+#map { height: 400px; }
+.altitude-marker {
+	font-size: 9px;
+	border: 1px solid #777;
+	border-radius: 10px;
+	text-align: center;
+	color: #000;
+	background: #fff;
+}
 </style>
 <title>Telemetry</title>
 </head>
@@ -24,10 +38,6 @@
 <div id="map"></div>
 
 <script type="text/javascript">
-hex = function(s) {
-	return parseInt(s, 16);
-};
-
 const hasL = (typeof L != 'undefined')
 if (hasL) {
 	map = L.map('map').setView([0, 0], 3);
@@ -46,9 +56,10 @@ if (hasL) {
 		apikey: apiKey
 	}).addTo(map);
 	path = L.polyline([], {color: 'red'}).addTo(map);
+	altMarkers = [];
 }
 
-updateSensor = function(sensor) {
+updateTable = function(sensor) {
 	const id = sensor.physicalId+'/'+sensor.sensorId;
 	let row = document.getElementById(id);
 	if (!row) {
@@ -89,26 +100,29 @@ updateSensor = function(sensor) {
 			}
 		}
 	}
+};
 
-	if (hasL) {
-		if (hex(sensor.sensorId) >= hex('0x0800') && hex(sensor.sensorId) <= hex('0x080F')) {
-			// GPS
-			const current = L.latLng(sensor.value[1], sensor.value[0]);
-			let addAsNext;
-			if (!path.isEmpty()) {
-				const points = path.getLatLngs();
-				const prev = points[points.length-1];
-				if (current.distanceTo(prev) > 1.0) {
-					addAsNext = true;
-				}
-			} else {
-				addAsNext = true;
-			}
-			if (addAsNext) {
-				path.addLatLng(current);
-				map.flyTo(current, 17, {animate: true});
-			}
+updateMap = function(sensor) {
+	const id = hex(sensor.sensorId);
+	if (id >= hex('0x0800') && id <= hex('0x080F')) {
+		// GPS
+		const current = addToPath(sensor.value[1], sensor.value[0], path);
+		if (current) {
+			map.flyTo(current, 17, {animate: true});
 		}
+	} else if (id >= hex('0x0100') && id <= hex('0x10F')) {
+		// Altitude
+		addAltitudeMarker(sensor.value, path, altMarkers);
+	}
+};
+
+sensorLog = [];
+
+updateSensor = function(sensor) {
+	updateTable(sensor);
+	sensorLog.push(sensor);
+	if (hasL) {
+		updateMap(sensor);
 	}
 };
 
@@ -127,13 +141,30 @@ fetch("http://"+window.location.hostname+"/sensors")
 	});
 </script>
 <br/>
+<div><a id="sensorLog" href="#">Sensor log</a></div>
+<script type="text/javascript">
+document.getElementById('sensorLog').onclick = function(evt) {
+	// hydrate sensor objects
+	for (const sensor of sensorLog) {
+		const id = sensor.physicalId+'/'+sensor.sensorId;
+		const row = document.getElementById(id);
+		sensor.name = row.dataset.name;
+		sensor.unit = row.dataset.unit;
+	}
+	const data = JSON.stringify(sensorLog, null, 1);
+	evt.target.href = URL.createObjectURL(new Blob([data], {type: 'application/json'}));
+	return true;
+};
+</script>
 <div><a id="gpsData" href="#">GPS data</a></div>
 <script type="text/javascript">
 document.getElementById('gpsData').onclick = function(evt) {
 	let data = '';
-	const points = path.getLatLngs();
-	for (let i=0; i<points.length; i++) {
-		data += points[i].lng+', '+points[i].lat+'\n';
+	let lastAlt = 0.0;
+	for (const point of path.getLatLngs()) {
+		const alt = ('alt' in point) ? point.alt : lastAlt;
+		data += point.lng+', '+point.lat+', '+alt+'\n';
+		lastAlt = alt;
 	}
 	evt.target.href = URL.createObjectURL(new Blob([data], {type: 'text/csv'}));
 	return true;
