@@ -6,7 +6,7 @@
 #include "debug.h"
 
 #define JSON_BUFFER_SIZE 256
-#define WS_EMIT_RATE 300
+#define WS_EMIT_RATE 100
 
 static void wsEventHandler(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len);
 static void sendJson(AsyncWebServerRequest* request);

@@ -21,7 +21,8 @@ class Sensor final {
   } value;
   const SensorInfo *info = nullptr;
   uint32_t lastUpdated = 0;
-  uint32_t lastSent = 0;
+  uint32_t lastChanged = 0;
+  uint32_t lastProcessed = 0;
 
   void setValue(uint32_t sensorData);
 };

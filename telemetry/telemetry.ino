@@ -53,7 +53,6 @@ static bool startWiFiAP();
 static bool startWiFiSTA();
 static bool stopWiFi();
 static void sendInternalSensors(bool includeStart);
-static uint16_t getSensorUpdateRate(uint16_t sensorId);
 static void loadPreferenceString(Preferences& prefs, const char* key, char* value, int maxSize, const char* defaultValue);
 
 static bool btCongested = false;
@@ -385,30 +384,22 @@ void processSensorPacket(uint8_t physicalId, uint16_t sensorId, uint32_t sensorD
 
   Sensor* sensor = telemetry.updateSensor(physicalId, sensorId, sensorData);
   if (sensor != nullptr) {
-    if ((sensor->lastUpdated - sensor->lastSent) > getSensorUpdateRate(sensorId)) {
-      bool webSent = webEmitSensor(*sensor);
-      bool mqttSent = mqttPublishSensor(*sensor);
-      if (webSent || mqttSent) {
-        webMsgCount++;
-        sensor->lastSent = millis();
+    bool sent = false;
+    const uint32_t changedAge = (sensor->lastUpdated - sensor->lastChanged);
+    const uint32_t processedAge = (sensor->lastUpdated - sensor->lastProcessed);
+    if ((changedAge < processedAge && processedAge > 200) // throttle frequent changes
+    || (processedAge > 500)) { // ensure everything is refreshed
+      if (webEmitSensor(*sensor)) {
+        sent = true;
       }
+      if (mqttPublishSensor(*sensor)) {
+        sent = true;
+      }
+      sensor->lastProcessed = millis();
     }
-  }
-}
-
-uint16_t getSensorUpdateRate(uint16_t sensorId) {
-  if (sensorId >= VFAS_FIRST_ID && sensorId <= VFAS_LAST_ID) {
-    return 1000;
-  } else if (sensorId >= T1_FIRST_ID && sensorId <= T1_LAST_ID) {
-    return 1000;
-  } else if (sensorId >= T2_FIRST_ID && sensorId <= T2_LAST_ID) {
-    return 1000;
-  } else if (sensorId >= ESC_TEMPERATURE_FIRST_ID && sensorId <= ESC_TEMPERATURE_LAST_ID) {
-    return 1000;
-  } else if (sensorId >= ESC_TEMPERATURE_FIRST_ID && sensorId <= ESC_TEMPERATURE_LAST_ID) {
-    return 1000;
-  } else {
-    return 500;
+    if (sent) {
+      webMsgCount++;
+    }
   }
 }
 
@@ -432,6 +423,7 @@ Sensor* Telemetry::updateSensor(uint8_t physicalId, uint16_t sensorId, uint32_t 
 }
 
 void Sensor::setValue(uint32_t sensorData) {
+  const uint32_t ts = millis();
   if (info) {
     if (info->unit == UNIT_GPS) {
       int32_t v = (sensorData & 0x3FFFFFFF); // abs value
@@ -440,17 +432,29 @@ void Sensor::setValue(uint32_t sensorData) {
         v = -v;
       }
       if (sensorData & 0x80000000) {
-        value.gps.longitude = v;
+        if (value.gps.longitude != v) {
+          value.gps.longitude = v;
+          lastChanged = ts;
+        }
       } else {
-        value.gps.latitude = v;
+        if (value.gps.latitude != v) {
+          value.gps.latitude = v;
+          lastChanged = ts;
+        }
       }
     } else {
-      value.numeric = sensorData;
+      if (value.numeric != sensorData) {
+        value.numeric = sensorData;
+        lastChanged = ts;
+      }
     }
   } else {
-    value.numeric = sensorData;
+    if (value.numeric != sensorData) {
+      value.numeric = sensorData;
+      lastChanged = ts;
+    }
   }
-  lastUpdated = millis();
+  lastUpdated = ts;
 }
 
 Sensor* Telemetry::getSensor(uint8_t physicalId, uint16_t sensorId) {
