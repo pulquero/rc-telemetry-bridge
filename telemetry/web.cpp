@@ -99,8 +99,12 @@ void sendJson(AsyncWebServerRequest* request) {
   for (int i=0; i<_telemetry->numSensors; i++) {
     char json[JSON_BUFFER_SIZE];
     int len = writeSensorJson(json, _telemetry->sensors[i], true);
-    if (len > JSON_BUFFER_SIZE) {
+    if (len < 0) {
+      LOGE("writeSensorJson error: %d", len);
+      return;
+    } else if (len > JSON_BUFFER_SIZE) {
       LOGE("JSON buffer size exceeded! (%d)", len);
+      return;
     }
     if (isFirst) {
       isFirst = false;
@@ -264,8 +268,12 @@ bool webEmitSensor(const Sensor& sensor) {
   if (isWebRunning && webSocket->count() > 0 && (millis() - lastEmit) > WS_EMIT_RATE) {
     char minJson[JSON_BUFFER_SIZE];
     int len = writeSensorJson(minJson, sensor, false);
-    if (len > JSON_BUFFER_SIZE) {
+    if (len < 0) {
+      LOGE("writeSensorJson error: %d", len);
+      return false;
+    } else if (len > JSON_BUFFER_SIZE) {
       LOGE("WS buffer size exceeded! (%d)", len);
+      return false;
     }
     int16_t idx = sensor._index;
     bool dataSent = false;
@@ -277,8 +285,12 @@ bool webEmitSensor(const Sensor& sensor) {
         } else {
           char fullJson[JSON_BUFFER_SIZE];
           int len = writeSensorJson(fullJson, sensor, true);
-          if (len > JSON_BUFFER_SIZE) {
+          if (len < 0) {
+            LOGE("writeSensorJson error: %d", len);
+            return false;
+          } else if (len > JSON_BUFFER_SIZE) {
             LOGE("WS buffer size exceeded! (%d)", len);
+            return false;
           }
           c->text(fullJson);
           dataSent = true;
@@ -293,11 +305,18 @@ bool webEmitSensor(const Sensor& sensor) {
   }
 }
 
+/**
+ * Returns -1 on error.
+ */
 int writeSensorJson(char* out, const Sensor& sensor, bool all) {
   char value[JSON_VALUE_BUFFER_SIZE];
   int len = jsonWriteSensorValue(value, sensor);
-  if (len > JSON_VALUE_BUFFER_SIZE-1) {
+  if (len < 0) {
+    LOGE("jsonWriteSensorValue error: %d", len);
+    return -1;
+  } else if (len > JSON_VALUE_BUFFER_SIZE-1) {
     LOGE("Value of sensor %04X exceeded buffer size!", sensor.sensorId);
+    return -1;
   }
   const char *name;
   const char *unit;

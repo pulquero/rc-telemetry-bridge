@@ -84,8 +84,12 @@ bool mqttPublishSensor(const Sensor& sensor) {
     if (ensureConnected()) {
       char value[JSON_VALUE_BUFFER_SIZE];
       int len = jsonWriteSensorValue(value, sensor);
-      if (len > JSON_VALUE_BUFFER_SIZE-1) {
+      if (len < 0) {
+        LOGE("jsonWriteSensorValue error: %d", len);
+        return false;
+      } else if (len > JSON_VALUE_BUFFER_SIZE-1) {
         LOGE("Value of sensor %04X exceeded buffer size!", sensor.sensorId);
+        return false;
       }
       const char *name;
       const char *unit;
@@ -117,8 +121,12 @@ bool mqttPublishSensor(const Sensor& sensor) {
       } else {
         len = sprintf(topicBuf, "%s/%02X/%s", _telemetry->config.mqtt.topic, sensor.physicalId, name);
       }
-      if (len > TOPIC_BUFFER_SIZE-1) {
+      if (len < 0) {
+        LOGE("sprintf error: %d", len);
+        return false;
+      } else if (len > TOPIC_BUFFER_SIZE-1) {
         LOGE("Topic buffer size exceeded! (%d)", len);
+        return false;
       }
       // remove any leading '/'
       char* topic = (topicBuf[0] == '/') ? topicBuf+1 : topicBuf;
@@ -128,8 +136,12 @@ bool mqttPublishSensor(const Sensor& sensor) {
       } else {
         len = sprintf(payload, "{\"value\": %s}", value);
       }
-      if (len > PAYLOAD_BUFFER_SIZE-1) {
+      if (len < 0) {
+        LOGE("sprintf error: %d", len);
+        return false;
+      } else if (len > PAYLOAD_BUFFER_SIZE-1) {
         LOGE("Payload buffer size exceeded! (%d)", len);
+        return false;
       }
       return mqttClient->publish(topic, payload);
     }

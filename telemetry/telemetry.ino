@@ -1,7 +1,10 @@
+// No OTA (2MB APP/2MB SPIFFS)
+
 #include <Arduino.h>
 #include <HardwareSerial.h>
 #include <BluetoothSerial.h>
 #include <BLEDevice.h>
+#include <BLE2902.h>
 #include <WiFi.h>
 #include <Preferences.h>
 #include "protocol.h"
@@ -11,9 +14,12 @@
 
 #include "debug.h"
 
+#define SERIALIZED_PACKET_SIZE (1+SPORT_DATA_PACKET_LEN+2+1) // allow for two byte stuffings
+#define SERIALIZATION_BUFFER_SIZE (1+2*SPORT_DATA_PACKET_LEN+1) // allow for everything to be byte-stuffed
 #define SERVICE_UUID        "0000FFF0-0000-1000-8000-00805F9B34FB"
-#define CHARACTERISTIC_UUID "CHOFA4E1-8155-476F-A173-35389666BE2D"
-#define BLE_BUFFER_SIZE 20
+#define CHARACTERISTIC_UUID "0000FFF6-0000-1000-8000-00805F9B34FB"
+#define BLE_BUFFER_SIZE (2*SERIALIZED_PACKET_SIZE)
+#define MTU_OVERHEAD 3
 #define PHYSICAL_SENSOR_ID 0x19
 #define TOUCH_THRESHOLD 35
 #define MIN_TOUCH_TIME 307
@@ -33,9 +39,11 @@ static const IPAddress gateway(192, 168, 31, 1);
 static const IPAddress subnet(255, 255, 255, 0);
 
 static BluetoothSerial* btSerial;
+static bool btCongested = false;
 static BLEServer* bleServer;
 static BLECharacteristic* bleChar;
 static bool bleIsAdvertising = false;
+static uint16_t bleDataSize = 23 - MTU_OVERHEAD;
 
 static uint32_t serialPacketCount = 0;
 static uint32_t webMsgCount = 0;
@@ -55,8 +63,6 @@ static bool stopWiFi();
 static void sendInternalSensors(bool includeStart);
 static void loadPreferenceString(Preferences& prefs, const char* key, char* value, int maxSize, const char* defaultValue);
 
-static bool btCongested = false;
-
 void btTelemetryCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
   switch(event) {
     case ESP_SPP_SRV_OPEN_EVT:
@@ -73,6 +79,16 @@ void btTelemetryCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
   }
 }
 
+void bleTelemetryCallback(esp_gatts_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gatts_cb_param_t* param) {
+  switch(event) {
+    case ESP_GATTS_MTU_EVT:
+      LOGD("BLE MTU set to %d", param->mtu.mtu);
+      // ensure we don't exceed the buffer size
+      bleDataSize = min(param->mtu.mtu - MTU_OVERHEAD, BLE_BUFFER_SIZE);
+      break;
+  }
+}
+
 void setup() {
 #ifdef DEBUG
   Serial.begin(115200);
@@ -82,8 +98,10 @@ void setup() {
 
 // Bluetooth startup sequence is critical!
   if (telemetry.config.ble.mode != MODE_DISABLED) {
-    BLEDevice::init(telemetry.config.ble.name);  
+    BLEDevice::init(telemetry.config.ble.name);
+    BLEDevice::setMTU(BLE_BUFFER_SIZE+MTU_OVERHEAD); // max 517
     BLEDevice::setPower(ESP_PWR_LVL_P7);
+    BLEDevice::setCustomGattsHandler(bleTelemetryCallback);
   }
   if (telemetry.config.bt.mode != MODE_DISABLED) {
     btSerial = new BluetoothSerial();
@@ -96,7 +114,10 @@ void setup() {
     bleServer = BLEDevice::createServer();
     BLEService* bleService = bleServer->createService(SERVICE_UUID);
     bleChar = bleService->createCharacteristic(CHARACTERISTIC_UUID,
-      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+      BLECharacteristic::PROPERTY_NOTIFY);
+    BLE2902* ble2902Desc = new BLE2902();
+    ble2902Desc->setNotifications(true);
+    bleChar->addDescriptor(ble2902Desc);
     bleService->start();
     BLEAdvertising* bleAdvertising = BLEDevice::getAdvertising();
     bleAdvertising->addServiceUUID(SERVICE_UUID);
@@ -149,13 +170,34 @@ void write(uint8_t* data, uint8_t len, SerialMode mode) {
   if (telemetry.config.ble.mode == mode) {
     static uint8_t bleBuffer[BLE_BUFFER_SIZE];
     static uint8_t bleWritePos = 0;
-    for (int i=0; i<len && bleWritePos<BLE_BUFFER_SIZE; i++) {
-      bleBuffer[bleWritePos++] = data[i];
-    }
-    if (bleWritePos == BLE_BUFFER_SIZE) {
-      bleChar->setValue(bleBuffer, BLE_BUFFER_SIZE);
-      bleChar->notify();
-      bleWritePos = 0;
+    if (mode == MODE_FILTER) {
+      // if it doesn't fit and there is already data in the buffer then send it
+      if (len > bleDataSize - bleWritePos && bleWritePos > 0) {
+        bleChar->setValue(bleBuffer, bleWritePos);
+        bleChar->notify();
+        bleWritePos = 0;
+      }
+      if (len <= bleDataSize - bleWritePos) {
+        for (int i=0; i<len; i++) {
+          bleBuffer[bleWritePos++] = data[i];
+        }
+      } else {
+        LOGE("Discarding BLE data - exceeds MTU");
+      }
+      if (bleWritePos > bleDataSize - SERIALIZED_PACKET_SIZE) {
+        bleChar->setValue(bleBuffer, bleWritePos);
+        bleChar->notify();
+        bleWritePos = 0;
+      }
+    } else {
+      for (int i=0; i<len; i++) {
+        bleBuffer[bleWritePos++] = data[i];
+        if (bleWritePos == bleDataSize) {
+          bleChar->setValue(bleBuffer, bleWritePos);
+          bleChar->notify();
+          bleWritePos = 0;
+        }
+      }
     }
   }
 }
@@ -373,28 +415,29 @@ void sendInternalSensors(bool includeStart) {
 }
 
 void processSensorPacket(uint8_t physicalId, uint16_t sensorId, uint32_t sensorData) {
-  static uint8_t sendBuffer[20];
+  static uint8_t sendBuffer[SERIALIZATION_BUFFER_SIZE];
   if (telemetry.config.usb.mode == MODE_FILTER || telemetry.config.bt.mode == MODE_FILTER || telemetry.config.ble.mode == MODE_FILTER) {
     int packetSize = writeSensorPacket(sendBuffer, physicalId, sensorId, sensorData, true);
-    if (packetSize > 20) {
+    if (packetSize <= SERIALIZATION_BUFFER_SIZE) {
+      write(sendBuffer, packetSize, MODE_FILTER);
+    } else {
       LOGE("Send buffer exceeded! (%d)", packetSize);
     }
-    write(sendBuffer, packetSize, MODE_FILTER);
   }
 
   Sensor* sensor = telemetry.updateSensor(physicalId, sensorId, sensorData);
   if (sensor != nullptr) {
     bool sent = false;
-    const uint32_t changedAge = (sensor->lastUpdated - sensor->lastChanged);
     const uint32_t processedAge = (sensor->lastUpdated - sensor->lastProcessed);
-    if ((changedAge < processedAge && processedAge > 200) // throttle frequent changes
-    || (processedAge > 500)) { // ensure everything is refreshed
+    if ((sensor->hasChangedSinceProcessed && processedAge > 200) // throttle frequent changes to no more than every 200ms
+    || (processedAge > 500)) { // ensure everything is refreshed every 500ms
       if (webEmitSensor(*sensor)) {
         sent = true;
       }
       if (mqttPublishSensor(*sensor)) {
         sent = true;
       }
+      sensor->hasChangedSinceProcessed = false;
       sensor->lastProcessed = millis();
     }
     if (sent) {
@@ -423,38 +466,57 @@ Sensor* Telemetry::updateSensor(uint8_t physicalId, uint16_t sensorId, uint32_t 
 }
 
 void Sensor::setValue(uint32_t sensorData) {
-  const uint32_t ts = millis();
   if (info) {
     if (info->unit == UNIT_GPS) {
-      int32_t v = (sensorData & 0x3FFFFFFF); // abs value
-      if (sensorData & 0x40000000) {
-        // restore sign
-        v = -v;
-      }
-      if (sensorData & 0x80000000) {
-        if (value.gps.longitude != v) {
-          value.gps.longitude = v;
-          lastChanged = ts;
-        }
-      } else {
-        if (value.gps.latitude != v) {
-          value.gps.latitude = v;
-          lastChanged = ts;
-        }
-      }
+      setGpsValue(sensorData);
     } else {
-      if (value.numeric != sensorData) {
-        value.numeric = sensorData;
-        lastChanged = ts;
-      }
+      setNumericValue(sensorData);
     }
   } else {
-    if (value.numeric != sensorData) {
-      value.numeric = sensorData;
-      lastChanged = ts;
+      setNumericValue(sensorData);
+  }
+  lastUpdated = millis();
+}
+
+void Sensor::setGpsValue(uint32_t sensorData) {
+    int32_t v = (sensorData & 0x3FFFFFFF); // abs value
+    if (sensorData & 0x40000000) {
+      // restore sign
+      v = -v;
+    }
+    if (sensorData & 0x80000000) { // is longitude
+      if (value.gps.longitude != v) {
+        lastChangedValue.gps.longitude = v;
+        hasChangedSinceProcessed = true;
+      }
+      value.gps.longitude = v;
+    } else {
+      if (value.gps.latitude != v) {
+        lastChangedValue.gps.latitude = v;
+        hasChangedSinceProcessed = true;
+      }
+      value.gps.latitude = v;
+    }
+}
+
+void Sensor::setNumericValue(uint32_t sensorData) {
+  int32_t v = sensorData;
+  if (info == nullptr || info->precision <= 1) {
+    if (value.numeric != v) {
+      lastChangedValue.numeric = v;
+      hasChangedSinceProcessed = true;
+    }
+  } else if(info->precision > 1) {
+    uint32_t diff = abs(v - lastChangedValue.numeric);
+    for (int i=0; i<info->precision; i++) {
+      diff /= 10;
+    }
+    if (diff > 0) {
+      lastChangedValue.numeric = v;
+      hasChangedSinceProcessed = true;
     }
   }
-  lastUpdated = ts;
+  value.numeric = v;
 }
 
 Sensor* Telemetry::getSensor(uint8_t physicalId, uint16_t sensorId) {

@@ -4,17 +4,23 @@
 static int writeFlightModeArray(char* out, uint32_t modes);
 static int writeGpsStateArray(char* out, uint32_t modes);
 
+/**
+ * Returns -1 on error.
+ */
 int jsonWriteSensorValue(char* value, const Sensor& sensor) {
   int len;
   if (sensor.info) {
     if (sensor.sensorId == FLIGHT_MODE_ID) {
+      // max len ~100
       len = writeFlightModeArray(value, sensor.value.numeric);
     } else if (sensor.sensorId == GPS_STATE_ID) {
+      // max len ~40
       len = writeGpsStateArray(value, sensor.value.numeric);
     } else if (sensor.info->unit == UNIT_GPS) {
       char lon[16], lat[16];
       dtostrf(sensor.value.gps.longitude/10000.0/60.0, 9, 7, lon);
       dtostrf(sensor.value.gps.latitude/10000.0/60.0, 9, 7, lat);
+      // max len 36
       len = sprintf(value, "[%s, %s]", lon, lat);
     } else {
       if (sensor.info->precision) {
@@ -30,7 +36,7 @@ int jsonWriteSensorValue(char* value, const Sensor& sensor) {
       }
     }
   } else {
-    // unknown sensor
+    // unknown sensor (max len 11)
     itoa(sensor.value.numeric, value, 10);
     len = strlen(value);
   }

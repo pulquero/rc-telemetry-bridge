@@ -7,21 +7,27 @@
 #define MAX_SENSORS 50
 #define strncpy_s(dst, src, n) strncpy(dst, src, n);dst[n-1] = '\0';
 
+union Value {
+  int32_t numeric = 0;
+  struct Gps {
+    int32_t latitude;
+    int32_t longitude;
+  } gps;
+};
+
 class Sensor final {
+  private:
+  void setGpsValue(uint32_t sensorData);
+  void setNumericValue(uint32_t sensorData);
   public:
   int16_t _index = -1;
   uint8_t physicalId = 0;
   uint16_t sensorId = 0;
-  union {
-    int32_t numeric = 0;
-    struct Gps {
-      int32_t latitude;
-      int32_t longitude;
-    } gps;
-  } value;
+  union Value value;
+  union Value lastChangedValue;
   const SensorInfo *info = nullptr;
   uint32_t lastUpdated = 0;
-  uint32_t lastChanged = 0;
+  bool hasChangedSinceProcessed = false;
   uint32_t lastProcessed = 0;
 
   void setValue(uint32_t sensorData);

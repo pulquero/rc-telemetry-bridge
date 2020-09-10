@@ -1,61 +1,45 @@
 #include "protocol.h"
 #include "debug.h"
 
-#define START_STOP 0x7E
-#define BYTE_STUFFING 0x7D
-#define STUFFING_MASK 0x20
-#define DATA_FRAME 0x10
+static SPortPacket sportPacket;
 
-#define SPORT_POLL_PACKET_LEN 1
-#define SPORT_DATA_PACKET_LEN 9
-#define SPORT_BUFFER_SIZE SPORT_DATA_PACKET_LEN
-
-static class SPortPacket final {
-  private:
-  bool byteStuffing = false;
-  uint16_t checksum = 0;
-  public:
-  uint8_t buffer[SPORT_BUFFER_SIZE];
-  int pos = 0;
-
-  bool add(uint8_t b) {
-    // read current packet
-    if (b == BYTE_STUFFING) {
-      // start of escape sequence
-      byteStuffing = true;
-    } else {
-      if (byteStuffing) {
-        // unescape byte
-        b ^= STUFFING_MASK;
-        byteStuffing = false;
-      }
-
-      if (pos < SPORT_BUFFER_SIZE) {
-        buffer[pos++] = b;
-        if (pos > 1) {
-          checksum += b;
-          checksum += checksum >> 8;
-          checksum &= 0x00FF;
-        }
-      } else {
-        // unexpected state
-        LOGD("Ignoring data - SmartPort packet buffer full");
-        return false;
-      }
+bool SPortPacket::add(uint8_t b) {
+  // read current packet
+  if (b == BYTE_STUFFING) {
+    // start of escape sequence
+    byteStuffing = true;
+  } else {
+    if (byteStuffing) {
+      // unescape byte
+      b ^= STUFFING_MASK;
+      byteStuffing = false;
     }
-    return true;
-  }
 
-  bool isValid() {
-    return checksum == 0xFF;
+    if (pos < SPORT_BUFFER_SIZE) {
+      buffer[pos++] = b;
+      if (pos > 1) {
+        checksum += b;
+        checksum += checksum >> 8;
+        checksum &= 0x00FF;
+      }
+    } else {
+      // unexpected state
+      LOGD("Ignoring data - SmartPort packet buffer full");
+      return false;
+    }
   }
+  return true;
+}
 
-  void clear() {
-    pos = 0;
-    byteStuffing = false;
-    checksum = 0;
-  }
-} sportPacket;
+bool SPortPacket::isValid() {
+  return checksum == 0xFF;
+}
+
+void SPortPacket::clear() {
+  pos = 0;
+  byteStuffing = false;
+  checksum = 0;
+}
 
 static int stuffByte(uint8_t*const data, uint8_t b);
 static uint16_t read16(uint8_t*const data);
