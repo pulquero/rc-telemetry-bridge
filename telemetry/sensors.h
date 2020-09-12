@@ -23,10 +23,12 @@
 #endif
 #define T2_FIRST_ID               0x0410
 #define T2_LAST_ID                0x041F
-#ifdef INAV_SENSORS
+#if defined(BETAFLIGHT_SENSORS) || defined(INAV_SENSORS)
 #define HOME_DIST_ID              0x0420
-#define PITCH_ID                  0x0430
-#define ROLL_ID                   0x0440
+#endif
+#ifdef INAV_SENSORS
+#define INAV_PITCH_ID             0x0430
+#define INAV_ROLL_ID              0x0440
 #define FPV_ID                    0x0450
 #endif
 #define RPM_FIRST_ID              0x0500
@@ -95,6 +97,10 @@
 #define SBEC_POWER_LAST_ID        0x0E5F
 #define DIY_FIRST_ID              0x5100
 #define HALL_EFFECT_ID            0x5131
+#ifdef BETAFLIGHT_SENSORS
+#define BF_PITCH_ID               0x5230
+#define BF_ROLL_ID                0x5240
+#endif
 #define DIY_LAST_ID               0x52FF
 #define DIY_STREAM_FIRST_ID       0x5000
 #define DIY_STREAM_LAST_ID        0x50FF
