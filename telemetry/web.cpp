@@ -121,7 +121,13 @@ static String _status = empty;
 
 const String settingsTemplateProcessor(const String& var) {
   static const String checked("checked");
-  if (var == "USB_DISABLED") {
+  if (var == "SOURCE_UART") {
+    return _telemetry->config.input.source == SOURCE_UART ? checked : empty;
+  } else if (var == "SOURCE_BLE") {
+    return _telemetry->config.input.source == SOURCE_BLE ? checked : empty;
+  } else if (var == "BT_SOURCE") {
+    return _telemetry->config.input.btAddress;
+  } else if (var == "USB_DISABLED") {
     return _telemetry->config.usb.mode == MODE_DISABLED ? checked : empty;
   } else if (var == "USB_PASSTHRU") {
     return _telemetry->config.usb.mode == MODE_PASS_THRU ? checked : empty;
@@ -193,7 +199,15 @@ void sendSettings(AsyncWebServerRequest* request) {
       AsyncWebParameter* param = request->getParam(i);
       String name = param->name();
       String value = param->value();
-      if (name == "usb_mode") {
+      if (name == "source") {
+        if (value == "ble") {
+          _telemetry->config.input.source = SOURCE_BLE;
+        } else {
+          _telemetry->config.input.source = SOURCE_UART;
+        }
+      } else if (name == "bt_source") {
+        strncpy_s(_telemetry->config.input.btAddress, value.c_str(), BD_ADDR_SIZE);
+      } else if (name == "usb_mode") {
         if (value == "filter") {
           _telemetry->config.usb.mode = MODE_FILTER;
         } else if (value == "passthru") {

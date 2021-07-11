@@ -33,6 +33,10 @@ class Sensor final {
   void setValue(uint32_t sensorData);
 };
 
+enum SerialSource {
+  SOURCE_UART, SOURCE_BLE
+};
+
 enum SerialMode {
   MODE_DISABLED, MODE_PASS_THRU, MODE_FILTER
 };
@@ -41,12 +45,17 @@ enum SerialMode {
 #define SSID_SIZE 32
 #define PASSWORD_SIZE 64
 #define NAME_SIZE 16
+#define BD_ADDR_SIZE 18
 #define URL_SIZE 128
 #define API_KEY_SIZE 128
 #define ENDPOINT_SIZE 64
 #define TOPIC_SIZE 32
 
 typedef struct {
+  struct {
+    SerialSource source = SOURCE_UART;
+    char btAddress[BD_ADDR_SIZE] = {'\0'};
+  } input;
   struct {
     SerialMode mode;
   } usb;

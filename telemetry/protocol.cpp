@@ -1,7 +1,19 @@
 #include "protocol.h"
 #include "debug.h"
 
-static SPortPacket sportPacket;
+static int stuffByte(uint8_t*const data, uint8_t b);
+static uint16_t read16(uint8_t*const data);
+static uint32_t read32(uint8_t*const data);
+
+static SPortPacket* sportPacket;
+
+void protocolBegin(Telemetry* telemetry) {
+  if (telemetry->config.input.source == SOURCE_BLE) {
+    sportPacket = new BleSPortPacket();
+  } else {
+    sportPacket = new SPortPacket();
+  }
+}
 
 bool SPortPacket::add(uint8_t b) {
   // read current packet
@@ -17,11 +29,7 @@ bool SPortPacket::add(uint8_t b) {
 
     if (pos < SPORT_BUFFER_SIZE) {
       buffer[pos++] = b;
-      if (pos > 1) {
-        checksum += b;
-        checksum += checksum >> 8;
-        checksum &= 0x00FF;
-      }
+      updateChecksum(b);
     } else {
       // unexpected state
       LOGD("Ignoring data - SmartPort packet buffer full");
@@ -29,6 +37,14 @@ bool SPortPacket::add(uint8_t b) {
     }
   }
   return true;
+}
+
+void SPortPacket::updateChecksum(uint8_t b) {
+  if (pos > 1) {
+    checksum += b;
+    checksum += checksum >> 8;
+    checksum &= 0x00FF;
+  }
 }
 
 bool SPortPacket::isValid() {
@@ -41,28 +57,52 @@ void SPortPacket::clear() {
   checksum = 0;
 }
 
-static int stuffByte(uint8_t*const data, uint8_t b);
-static uint16_t read16(uint8_t*const data);
-static uint32_t read32(uint8_t*const data);
+uint8_t SPortPacket::physicalId() {
+  return buffer[0] & 0x1F;
+}
+
+uint8_t SPortPacket::frameId() {
+  return buffer[1];
+}
+
+uint16_t SPortPacket::sensorId() {
+  return read16(buffer+2);
+}
+
+uint32_t SPortPacket::sensorData() {
+  return read32(buffer+4);
+}
+
+int SPortPacket::size() {
+  return pos;
+}
+
+
+void BleSPortPacket::updateChecksum(uint8_t b) {
+  checksum ^= b;
+}
+
+bool BleSPortPacket::isValid() {
+  return checksum == 0;
+}
+
 
 int sportOnReceive(uint8_t b) {
   static bool waitingForFirstPacket = true;
 
   if (b == START_STOP) {
-    const int packetLen = sportPacket.pos;
+    const int packetLen = sportPacket->size();
     if (waitingForFirstPacket) {
       // start of our first packet
       waitingForFirstPacket = false;
     } else if (packetLen > 0) {
       // end of current packet - start of next
-      uint8_t physicalId = sportPacket.buffer[0] & 0x1F;
+      uint8_t physicalId = sportPacket->physicalId();
       if (packetLen == SPORT_DATA_PACKET_LEN) {
-        if (sportPacket.isValid()) {
-          uint8_t frameId = sportPacket.buffer[1];
+        if (sportPacket->isValid()) {
+          uint8_t frameId = sportPacket->frameId();
           if (frameId == DATA_FRAME) {
-            uint16_t sensorId = read16(sportPacket.buffer+2);
-            uint32_t sensorData = read32(sportPacket.buffer+4);
-            processSensorPacket(physicalId, sensorId, sensorData);
+            processSensorPacket(physicalId, sportPacket->sensorId(), sportPacket->sensorData());
           }
         } else {
           LOGD("SmartPort packet checksum failed");
@@ -73,16 +113,16 @@ int sportOnReceive(uint8_t b) {
         LOGD("Ignoring SmartPort packet of incorrect length: %d", packetLen);
       }
     }
-    sportPacket.clear();
+    sportPacket->clear();
     return packetLen; // return +ve value to indicate complete packet
   } else if (!waitingForFirstPacket) {
     // read current packet
-    if (!sportPacket.add(b)) {
+    if (!sportPacket->add(b)) {
       // dropped some bytes or something
       waitingForFirstPacket = true;
-      sportPacket.clear();
+      sportPacket->clear();
     }
-    return -sportPacket.pos; // return -ve value to indicate incomplete packet
+    return -sportPacket->size(); // return -ve value to indicate incomplete packet
   } else {
     return 0;
   }
@@ -107,7 +147,7 @@ int writeSensorPacket(uint8_t*const out, uint8_t physicalId, uint16_t sensorId, 
   for (int i=packetStartPos; i<pos; i++) {
     checksum += out[i];
   }
-  out[pos++] = 0xFF - ((checksum & 0xFF) + (checksum >> 8));
+  out[pos++] = 0xFF - ((checksum & 0x00FF) + (checksum >> 8));
   out[pos++] = START_STOP;
   return pos;
 }
