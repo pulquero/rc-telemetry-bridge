@@ -9,6 +9,19 @@
 <body>
 <h1>Settings</h1>
 <form method="post">
+
+<h2>Input</h2>
+<div>
+Source:
+<input type="radio" name="source" value="uart" %SOURCE_UART%>UART</input>
+<input type="radio" name="source" value="ble" %SOURCE_BLE%>BLE</input>
+</div>
+<h3>Bluetooth</h3>
+<div>
+Address:
+<input type="text" name="bt_source" size="18" maxlength="17" value="%BT_SOURCE%"/>
+</div>
+
 <h2>Outputs</h2>
 <h3>USB</h3>
 <div>
@@ -39,30 +52,39 @@ Mode:
 <input type="radio" name="ble_mode" value="passthru" %BLE_PASSTHRU%>Pass-thru</input>
 <input type="radio" name="ble_mode" value="filter" %BLE_FILTER%>Filter</input>
 </div>
+
 <h2>Web</h2>
 <h3>WiFi</h3>
-<div>
-WiFi access point hostname: <input type="text" name="ap_hostname" size="17" maxlength="16" value="%AP_HOSTNAME%"/>
-</div>
-<div>
-WiFi access point credentials:
-<input type="text" name="ap_ssid" size="33" maxlength="32" value="%AP_SSID%"/>
-<input type="password" name="ap_password" size="17" maxlength="16" value="%AP_PASSWORD%"/>
-</div>
-<div>
-WiFi client hostname: <input type="text" name="hostname" size="17" maxlength="16" value="%HOSTNAME%"/>
-</div>
-<div>
-WiFi client credentials:
-<input type="text" name="remote_ssid" size="33" maxlength="32" value="%REMOTE_SSID%"/>
-<input type="password" name="remote_password" size="17" maxlength="16" value="%REMOTE_PASSWORD%"/>
-</div>
 <div>
 Default:
 <input type="radio" name="wifi_mode" value="off" %WIFI_OFF%>Off</input>
 <input type="radio" name="wifi_mode" value="sta" %WIFI_STA%>Station (outbound)</input>
 <input type="radio" name="wifi_mode" value="ap" %WIFI_AP%>Access point (inbound)</input>
 <input type="radio" name="wifi_mode" value="ap_sta" %WIFI_AP_STA%>Access point and station</input>
+</div>
+<h4>Access point</h4>
+<div>
+Hostname: <input type="text" name="ap_hostname" size="17" maxlength="16" value="%AP_HOSTNAME%"/>
+</div>
+<div>
+SSID:
+<input type="text" name="ap_ssid" size="33" maxlength="32" value="%AP_SSID%"/>
+</div>
+<div>
+Password:
+<input type="password" name="ap_password" size="17" maxlength="16" value="%AP_PASSWORD%"/>
+</div>
+<h4>Client</h4>
+<div>
+Hostname: <input type="text" name="hostname" size="17" maxlength="16" value="%HOSTNAME%"/>
+</div>
+<div>
+SSID:
+<input type="text" name="remote_ssid" size="33" maxlength="32" value="%REMOTE_SSID%"/>
+</div>
+<div>
+Password:
+<input type="password" name="remote_password" size="17" maxlength="16" value="%REMOTE_PASSWORD%"/>
 </div>
 <h3>Map</h3>
 <div>
@@ -75,6 +97,7 @@ Tiles: <input type="url" name="map_tiles" size="64" maxlength="127" value="%MAP_
 <div>
 API key: <input type="text" name="map_api_key" size="64" maxlength="127" value="%MAP_API_KEY%"/>
 </div>
+
 <h2>MQTT</h2>
 <div>
 Broker: <input type="text" name="mqtt_broker" size="64" maxlength="127" value="%MQTT_BROKER%"/>
@@ -87,6 +110,7 @@ Topic: <input type="text" name="mqtt_topic" size="32" maxlength="31" value="%MQT
 <div>
 Internal sensors: <input type="checkbox" name="internal_sensors" %INTERNAL_SENSORS%/>
 </div>
+
 <br/>
 <input type="submit" value="Save"/>
 </form>

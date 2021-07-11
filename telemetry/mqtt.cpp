@@ -36,7 +36,7 @@ void loadCertificates(WiFiClientSecure* client) {
 }
 
 void mqttBegin(Telemetry* telemetry) {
-  if (!isMqttRunning && telemetry->config.mqtt.broker) {
+  if (!isMqttRunning && strlen(telemetry->config.mqtt.broker) > 0) {
     _telemetry = telemetry;
     client = new WiFiClientSecure();
     loadCertificates(client);

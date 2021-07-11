@@ -43,7 +43,7 @@ static bool btCongested = false;
 static BLEServer* bleServer;
 static BLECharacteristic* bleChar;
 static bool bleIsAdvertising = false;
-static uint16_t bleDataSize = 23 - MTU_OVERHEAD;
+static int bleDataSize = 23 - MTU_OVERHEAD;
 
 static uint32_t serialPacketCount = 0;
 static uint32_t webMsgCount = 0;
@@ -52,9 +52,10 @@ static const uint8_t touchPins[] = {WIFI_STA_TOUCH_PIN, BLE_ADVERT_TOUCH_PIN, WI
 static Telemetry telemetry;
 #define INCOMING_CAPACITY 20
 static uint8_t incoming[INCOMING_CAPACITY];
-static uint8_t incomingReadPos = 0;
-static uint8_t incomingWritePos = 0;
+static int incomingReadPos = 0;
+static int incomingWritePos = 0;
 
+static void write(uint8_t* data, int len, SerialMode mode);
 static void checkButtons();
 static bool handleButton(uint8_t buttonId);
 static bool startWiFiAP();
@@ -89,12 +90,23 @@ void bleTelemetryCallback(esp_gatts_cb_event_t event, esp_gatt_if_t gattc_if, es
   }
 }
 
+void bleSourceCallback(BLERemoteCharacteristic* remoteChar, uint8_t* data, size_t len, bool isNotify) {
+  write(data, len, MODE_PASS_THRU);
+  for (int i=0; i<len; i++) {
+    if (sportOnReceive(data[i]) > 0) {
+      serialPacketCount++;
+    }
+  }
+}
+
 void setup() {
 #ifdef DEBUG
   Serial.begin(115200);
 #endif
 
   telemetry.load();
+
+  protocolBegin(&telemetry);
 
 // Bluetooth startup sequence is critical!
   if (telemetry.config.ble.mode != MODE_DISABLED) {
@@ -108,6 +120,27 @@ void setup() {
     btSerial->register_callback(btTelemetryCallback);
     if(!btSerial->begin(telemetry.config.bt.name)) {
       LOGE("Failed to initialise BT");
+    }
+  }
+  if (telemetry.config.input.source == SOURCE_BLE) {
+    BLERemoteCharacteristic* remoteChar = nullptr;
+    BLEClient* bleClient = BLEDevice::createClient();
+    if (bleClient->connect(BLEAddress(telemetry.config.input.btAddress))) {
+      BLERemoteService* remoteService = bleClient->getService(SERVICE_UUID);
+      if (remoteService != nullptr) {
+        remoteChar = remoteService->getCharacteristic(CHARACTERISTIC_UUID);
+        if (remoteChar->canNotify()) {
+          remoteChar->registerForNotify(bleSourceCallback);
+        }
+      }
+    } else {
+      LOGE("Failed to connect to Bluetooth device %s", telemetry.config.input.btAddress);
+    }
+    if (remoteChar == nullptr) {
+      if (bleClient->isConnected()) {
+        bleClient->disconnect();
+      }
+      delete bleClient;
     }
   }
   if (telemetry.config.ble.mode != MODE_DISABLED) {
@@ -148,7 +181,7 @@ void setup() {
   LOGMEM();
 }
 
-void write(uint8_t* data, uint8_t len, SerialMode mode) {
+void write(uint8_t* data, int len, SerialMode mode) {
 #ifndef DEBUG
   if (telemetry.config.usb.mode == mode) {
     if (mode == MODE_FILTER) {
@@ -169,7 +202,7 @@ void write(uint8_t* data, uint8_t len, SerialMode mode) {
   }
   if (telemetry.config.ble.mode == mode) {
     static uint8_t bleBuffer[BLE_BUFFER_SIZE];
-    static uint8_t bleWritePos = 0;
+    static int bleWritePos = 0;
     if (mode == MODE_FILTER) {
       // if it doesn't fit and there is already data in the buffer then send it
       if (len > bleDataSize - bleWritePos && bleWritePos > 0) {
@@ -212,7 +245,7 @@ void loop() {
       incomingReadPos = 0;
       incomingWritePos = 0;
     }
-  } else {
+  } else if (telemetry.config.input.source == SOURCE_UART) {
     // rx is floating by default so when nothing is connected we may read noise
     if (Serial2.available()) {
       static uint8_t buf[1];
@@ -540,8 +573,12 @@ void Telemetry::load() {
     LOGE("Could not open preferences!");
     return;
   }
+
   // emergency reset
   //preferences.clear();
+
+  config.input.source = (SerialSource) preferences.getShort("inputSource", SOURCE_UART);
+  loadPreferenceString(preferences, "btSource", config.input.btAddress, BD_ADDR_SIZE);
   config.usb.mode = (SerialMode) preferences.getShort("usbMode", MODE_PASS_THRU);
   loadPreferenceString(preferences, "btName", config.bt.name, NAME_SIZE, "Telemetry BT");
   config.bt.mode = (SerialMode) preferences.getShort("btMode", MODE_DISABLED);
@@ -562,6 +599,7 @@ void Telemetry::load() {
   config.internalSensors.enableHallEffect = preferences.getBool("internalSensors", true);
   preferences.end();
 
+  LOGD("BT source address: '%s'", config.input.btAddress);
   LOGD("BT name: '%s'", config.bt.name);
   LOGD("BLE name: '%s'", config.ble.name);
   LOGD("WiFi AP hostname: '%s'", config.wifi.ap.hostname);
@@ -583,6 +621,9 @@ void Telemetry::save() {
     LOGE("Could not open preferences!");
     return;
   }
+
+  preferences.putShort("inputSource", config.input.source);
+  preferences.putString("btSource", config.input.btAddress);
   preferences.putShort("usbMode", config.usb.mode);
   preferences.putString("btName", config.bt.name);
   preferences.putShort("btMode", config.bt.mode);
