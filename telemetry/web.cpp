@@ -1,10 +1,13 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
-#include "json.h"
+
+#include "protocol.h"
 #include "web.h"
+#include "json.h"
 #include "debug.h"
 
+#define SENSOR_ID_BUFFER_SIZE 8
 #define JSON_BUFFER_SIZE 256
 #define WS_EMIT_RATE 100
 
@@ -39,7 +42,7 @@ void webBegin(Telemetry* telemetry) {
     webServer->begin();
     isWebRunning = true;
   }
-  LOGMEM();
+  LOGMEM("post-webBegin");
 }
 
 void webStop() {
@@ -53,24 +56,31 @@ void webStop() {
    * currently causes CORRUPT HEAP: Bad head
   if (webServer) {
     delete webServer;
-    delete webSocket;
-    webSocket = nullptr;
     webServer = nullptr;
   }
+  if (webSocket) {
+    delete webSocket;
+    webSocket = nullptr;
+  }
   */
-  LOGMEM();
+  LOGMEM("post-webStop");
 }
 
 void wsEventHandler(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len) {
   switch (type) {
     case WS_EVT_CONNECT:
       LOGD("WS connected");
-      client->_tempObject = new bool[MAX_SENSORS]();
+      client->_tempObject = new bool[MAX_SENSORS];
       break;
     case WS_EVT_DISCONNECT:
       LOGD("WS disconnected");
-      delete client->_tempObject;
+      if (client->_tempObject) {
+        delete[] (bool*) (client->_tempObject);
+        client->_tempObject = nullptr;
+      }
       break;
+    default:
+      ;
   }
 }
 
@@ -84,11 +94,11 @@ const String indexTemplateProcessor(const String& var) {
   }
 }
 
-void webLoop() {
+void webLoop(uint32_t ms) {
   static uint32_t lastCleanup = 0;
-  if (isWebRunning && (millis() - lastCleanup) > 500) {
+  if (isWebRunning && (ms - lastCleanup) > 500) {
     webSocket->cleanupClients();
-    lastCleanup = millis();
+    lastCleanup = ms;
   }
 }
 
@@ -127,6 +137,10 @@ const String settingsTemplateProcessor(const String& var) {
     return _telemetry->config.input.source == SOURCE_BLE ? checked : empty;
   } else if (var == "BT_SOURCE") {
     return _telemetry->config.input.btAddress;
+  } else if (var == "PROTOCOL_SPORT") {
+    return _telemetry->config.input.protocol == PROTOCOL_SMART_PORT ? checked : empty;
+  } else if (var == "PROTOCOL_CRSF") {
+    return _telemetry->config.input.protocol == PROTOCOL_CRSF ? checked : empty;
   } else if (var == "USB_DISABLED") {
     return _telemetry->config.usb.mode == MODE_DISABLED ? checked : empty;
   } else if (var == "USB_PASSTHRU") {
@@ -207,6 +221,12 @@ void sendSettings(AsyncWebServerRequest* request) {
         }
       } else if (name == "bt_source") {
         strncpy_s(_telemetry->config.input.btAddress, value.c_str(), BD_ADDR_SIZE);
+      } else if (name == "protocol") {
+        if (value == "crsf") {
+          _telemetry->config.input.protocol = PROTOCOL_CRSF;
+        } else {
+          _telemetry->config.input.protocol = PROTOCOL_SMART_PORT;
+        }
       } else if (name == "usb_mode") {
         if (value == "filter") {
           _telemetry->config.usb.mode = MODE_FILTER;
@@ -292,8 +312,9 @@ bool webEmitSensor(const Sensor& sensor) {
     int16_t idx = sensor._index;
     bool dataSent = false;
     for (AsyncWebSocketClient* c : webSocket->getClients()) {
-      if (c->_tempObject && !c->queueIsFull()) {
-        if (((bool*)c->_tempObject)[idx]) {
+      bool* haveSentFull = (bool*) (c->_tempObject);
+      if (haveSentFull && !c->queueIsFull()) {
+        if (haveSentFull[idx]) {
           c->text(minJson);
           dataSent = true;
         } else {
@@ -308,7 +329,7 @@ bool webEmitSensor(const Sensor& sensor) {
           }
           c->text(fullJson);
           dataSent = true;
-          ((bool*)c->_tempObject)[idx] = true;
+          haveSentFull[idx] = true;
         }
       }
     }
@@ -323,33 +344,44 @@ bool webEmitSensor(const Sensor& sensor) {
  * Returns -1 on error.
  */
 int writeSensorJson(char* out, const Sensor& sensor, bool all) {
-  char value[JSON_VALUE_BUFFER_SIZE];
-  int len = jsonWriteSensorValue(value, sensor);
+  int len;
+  char sensorId[SENSOR_ID_BUFFER_SIZE];
+  if (sensor.info && sensor.info->subCount > 1) {
+    len = sprintf(sensorId, "%04X/%d", sensor.sensorId, sensor.info->subId);
+  } else {
+    len = sprintf(sensorId, "%04X", sensor.sensorId);
+  }
   if (len < 0) {
-    LOGE("jsonWriteSensorValue error: %d", len);
+    LOGE("sprintf error: %d", len);
+    return -1;
+  } else if (len > SENSOR_ID_BUFFER_SIZE-1) {
+    LOGE("Sensor ID %04X exceeded buffer size!", sensor.sensorId);
+    return -1;
+  }
+
+  char value[JSON_VALUE_BUFFER_SIZE];
+  len = protocolWriteJsonSensorValue(value, sensor);
+  if (len < 0) {
+    LOGE("protocolWriteJsonSensorValue error: %d", len);
     return -1;
   } else if (len > JSON_VALUE_BUFFER_SIZE-1) {
     LOGE("Value of sensor %04X exceeded buffer size!", sensor.sensorId);
     return -1;
   }
-  const char *name;
-  const char *unit;
-  if (sensor.info) {
-    name = sensor.info->name;
-    unit = sensor.info->getUnitName();
-    if (sensor.sensorId == FLIGHT_MODE_ID) {
-      unit = "";
-    } else if (sensor.sensorId == GPS_STATE_ID) {
+
+  if (all) {
+    const char *name;
+    const char *unit;
+    if (sensor.info) {
+      name = sensor.info->name;
+      unit = sensor.info->getUnitName();
+    } else {
+      // unknown sensor
+      name = UNKNOWN_SENSOR;
       unit = "";
     }
+    return sprintf(out, "{\"physicalId\": \"%02X\", \"sensorId\": \"%s\", \"name\": \"%s\", \"value\": %s, \"unit\": \"%s\"}", sensor.physicalId, sensorId, name, value, unit);
   } else {
-    // unknown sensor
-    name = "Custom";
-    unit = "";
-  }
-  if (all) {
-    return sprintf(out, "{\"physicalId\": \"%02X\", \"sensorId\": \"%04X\", \"name\": \"%s\", \"value\": %s, \"unit\": \"%s\"}", sensor.physicalId, sensor.sensorId, name, value, unit);
-  } else {
-    return sprintf(out, "{\"physicalId\": \"%02X\", \"sensorId\": \"%04X\", \"value\": %s}", sensor.physicalId, sensor.sensorId, value);
+    return sprintf(out, "{\"physicalId\": \"%02X\", \"sensorId\": \"%s\", \"value\": %s}", sensor.physicalId, sensorId, value);
   }
 }

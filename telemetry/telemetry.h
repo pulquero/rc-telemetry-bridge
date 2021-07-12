@@ -7,34 +7,12 @@
 #define MAX_SENSORS 50
 #define strncpy_s(dst, src, n) strncpy(dst, src, n);dst[n-1] = '\0';
 
-union Value {
-  int32_t numeric = 0;
-  struct Gps {
-    int32_t latitude;
-    int32_t longitude;
-  } gps;
-};
-
-class Sensor final {
-  private:
-  void setGpsValue(uint32_t sensorData);
-  void setNumericValue(uint32_t sensorData);
-  public:
-  int16_t _index = -1;
-  uint8_t physicalId = 0;
-  uint16_t sensorId = 0;
-  union Value value;
-  union Value lastChangedValue;
-  const SensorInfo *info = nullptr;
-  uint32_t lastUpdated = 0;
-  bool hasChangedSinceProcessed = false;
-  uint32_t lastProcessed = 0;
-
-  void setValue(uint32_t sensorData);
-};
-
 enum SerialSource {
   SOURCE_UART, SOURCE_BLE
+};
+
+enum TelemetryProtocol {
+  PROTOCOL_SMART_PORT, PROTOCOL_CRSF
 };
 
 enum SerialMode {
@@ -55,6 +33,7 @@ typedef struct {
   struct {
     SerialSource source = SOURCE_UART;
     char btAddress[BD_ADDR_SIZE] = {'\0'};
+    TelemetryProtocol protocol = PROTOCOL_SMART_PORT;
   } input;
   struct {
     SerialMode mode;
@@ -103,8 +82,8 @@ class Telemetry final {
   Sensor sensors[MAX_SENSORS];
   int numSensors = 0;
 
-  Sensor* updateSensor(uint8_t physicalId, uint16_t sensorId, uint32_t sensorData);
-  Sensor* getSensor(uint8_t physicalId, uint16_t sensorId);
+  Sensor* updateSensor(uint8_t physicalId, uint16_t sensorId, uint8_t subId, uint32_t sensorData, SensorDataType sensorDataType);
+  Sensor* getSensor(uint8_t physicalId, uint16_t sensorId, uint8_t subId);
   void load();
   void save();
 };

@@ -104,13 +104,13 @@ updateTable = function(sensor) {
 
 updateMap = function(sensor) {
 	const id = hex(sensor.sensorId);
-	if (id >= hex('0x0800') && id <= hex('0x080F')) {
+	if ((id >= hex('0x0800') && id <= hex('0x080F')) || (sensor.sensorId === '0002/0')) {
 		// GPS
 		const current = addToPath(sensor.value[1], sensor.value[0], path);
 		if (current) {
 			map.flyTo(current, 17, {animate: true});
 		}
-	} else if (id >= hex('0x0100') && id <= hex('0x10F')) {
+	} else if ((id >= hex('0x0100') && id <= hex('0x10F')) || (sensor.sensorId === '0002/3')) {
 		// Altitude
 		addAltitudeMarker(sensor.value, path, altMarkers);
 	}

@@ -2,12 +2,14 @@
 #include <MQTT.h>
 #include <SPIFFS.h>
 
-#include "json.h"
+#include "protocol.h"
 #include "mqtt.h"
+#include "json.h"
 #include "debug.h"
 
 #define TOPIC_BUFFER_SIZE 64
 #define PAYLOAD_BUFFER_SIZE 128
+#define RECONNECT_DELAY 273
 
 static Telemetry* _telemetry;
 
@@ -26,13 +28,13 @@ template<typename L> void loadFromFile(const char* fname, L&& load) {
 }
 
 void loadCertificates(WiFiClientSecure* client) {
-  LOGMEM();
+  LOGMEM("pre-MQTT-loadCertificates");
   SPIFFS.begin();
   loadFromFile("/ca.cert.pem", [client](Stream& stream, size_t size){return client->loadCACert(stream, size);});
   loadFromFile("/client.cert.pem", [client](Stream& stream, size_t size){return client->loadCertificate(stream, size);});
   loadFromFile("/private.key.pem", [client](Stream& stream, size_t size){return client->loadPrivateKey(stream, size);});
   SPIFFS.end();
-  LOGMEM();
+  LOGMEM("post-MQTT-loadCertificates");
 }
 
 void mqttBegin(Telemetry* telemetry) {
@@ -63,17 +65,22 @@ void mqttLoop() {
 }
 
 bool ensureConnected() {
-  LOGMEM();
+  static uint32_t lastAttempt = 0;
   bool isConn = mqttClient->connected();
-  if (!isConn) {
+  const uint32_t ms = millis();
+  if (!isConn && (ms - lastAttempt) > RECONNECT_DELAY) {
+    LOGMEM("pre-MQTT-ensureConnected");
     LOGD("WiFi station status: %d", WiFi.status());
     isConn = mqttClient->connect(_telemetry->config.wifi.client.hostname);
     LOGD("MQTT connection: %d", mqttClient->returnCode());
-    if (!isConn) {
+    if (isConn) {
+      lastAttempt = 0;
+    } else {
+      lastAttempt = ms;
       LOGE("MQTT connection error: %d", mqttClient->lastError());
       char errMsg[100] = {'\0'};
       int errCode = client->lastError(errMsg, 100);
-      LOGE("Client connection error (%d): %s", errCode, errMsg);
+      LOGE("MQTT client connection error (%d): %s", errCode, errMsg);
     }
   }
   return isConn;
@@ -83,9 +90,9 @@ bool mqttPublishSensor(const Sensor& sensor) {
   if (isMqttRunning && WiFi.isConnected()) {
     if (ensureConnected()) {
       char value[JSON_VALUE_BUFFER_SIZE];
-      int len = jsonWriteSensorValue(value, sensor);
+      int len = protocolWriteJsonSensorValue(value, sensor);
       if (len < 0) {
-        LOGE("jsonWriteSensorValue error: %d", len);
+        LOGE("protocolWriteJsonSensorValue error: %d", len);
         return false;
       } else if (len > JSON_VALUE_BUFFER_SIZE-1) {
         LOGE("Value of sensor %04X exceeded buffer size!", sensor.sensorId);
@@ -99,27 +106,29 @@ bool mqttPublishSensor(const Sensor& sensor) {
         unit = sensor.info->getUnitName();
         if (sensor.info->lastId > sensor.info->firstId) {
           pos = sensor.sensorId - sensor.info->firstId + 1;
-          if (sensor.sensorId == FLIGHT_MODE_ID) {
-            unit = "";
-            pos = -1;
-          } else if (sensor.sensorId == GPS_STATE_ID) {
-            unit = "";
-            pos = -1;
-          }
         } else {
           pos = -1;
         }
       } else {
         // unknown sensor
-        name = "Custom";
+        name = UNKNOWN_SENSOR;
         unit = "";
         pos = -1;
       }
       char topicBuf[TOPIC_BUFFER_SIZE];
-      if (pos > 0) {
-        len = sprintf(topicBuf, "%s/%02X/%s/%d", _telemetry->config.mqtt.topic, sensor.physicalId, name, pos);
-      } else {
-        len = sprintf(topicBuf, "%s/%02X/%s", _telemetry->config.mqtt.topic, sensor.physicalId, name);
+      len = sprintf(topicBuf, "%s/%02X/%s", _telemetry->config.mqtt.topic, sensor.physicalId, name);
+      if (len > 0 && len < TOPIC_BUFFER_SIZE && pos > 0) {
+        int posLen = sprintf(&(topicBuf[len]), "/%d", pos);
+        len = (posLen >=0 ? len+posLen : -1);
+      }
+      if (len > 0 && len < TOPIC_BUFFER_SIZE && sensor.info && sensor.info->subCount > 1) {
+        int subLen;
+        if (pos > 0) {
+          subLen = sprintf(&(topicBuf[len]), "/%d", sensor.info->subId+1);
+        } else {
+          subLen = sprintf(&(topicBuf[len]), "//%d", sensor.info->subId+1);
+        }
+        len = (subLen >=0 ? len+subLen : -1);
       }
       if (len < 0) {
         LOGE("sprintf error: %d", len);

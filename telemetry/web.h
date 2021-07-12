@@ -5,11 +5,12 @@
  * Web-based interface.
  */
 
+#include <stdint.h>
 #include "telemetry.h"
 
 void webBegin(Telemetry* telemetry);
 void webStop();
-void webLoop();
+void webLoop(uint32_t ms);
 bool webEmitSensor(const Sensor& sensor);
 
 #endif

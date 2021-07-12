@@ -1,121 +1,126 @@
-#include <Arduino.h>
+#ifndef sensors_h
+#define sensors_h
 
-#define BETAFLIGHT_SENSORS
-#define INAV_SENSORS
+#include <stdint.h>
 
-#define ALT_FIRST_ID              0x0100
-#define ALT_LAST_ID               0x010F
-#define VARIO_FIRST_ID            0x0110
-#define VARIO_LAST_ID             0x011F
-#define CURR_FIRST_ID             0x0200
-#define CURR_LAST_ID              0x020F
-#define VFAS_FIRST_ID             0x0210
-#define VFAS_LAST_ID              0x021F
-#define CELLS_FIRST_ID            0x0300
-#define CELLS_LAST_ID             0x030F
-#if defined(BETAFLIGHT_SENSORS) || defined(INAV_SENSORS)
-#define FLIGHT_MODE_ID            0x0400
-#endif
-#define T1_FIRST_ID               0x0400
-#define T1_LAST_ID                0x040F
-#if defined(BETAFLIGHT_SENSORS) || defined(INAV_SENSORS)
-#define GPS_STATE_ID              0x0410
-#endif
-#define T2_FIRST_ID               0x0410
-#define T2_LAST_ID                0x041F
-#if defined(BETAFLIGHT_SENSORS) || defined(INAV_SENSORS)
-#define HOME_DIST_ID              0x0420
-#endif
-#ifdef INAV_SENSORS
-#define INAV_PITCH_ID             0x0430
-#define INAV_ROLL_ID              0x0440
-#define FPV_ID                    0x0450
-#endif
-#define RPM_FIRST_ID              0x0500
-#define RPM_LAST_ID               0x050F
-#define FUEL_FIRST_ID             0x0600
-#define FUEL_LAST_ID              0x060F
-#define ACCX_FIRST_ID             0x0700
-#define ACCX_LAST_ID              0x070F
-#define ACCY_FIRST_ID             0x0710
-#define ACCY_LAST_ID              0x071F
-#define ACCZ_FIRST_ID             0x0720
-#define ACCZ_LAST_ID              0x072F
-#define GPS_LONG_LATI_FIRST_ID    0x0800
-#define GPS_LONG_LATI_LAST_ID     0x080F
-#define GPS_ALT_FIRST_ID          0x0820
-#define GPS_ALT_LAST_ID           0x082F
-#define GPS_SPEED_FIRST_ID        0x0830
-#define GPS_SPEED_LAST_ID         0x083F
-#define GPS_COURS_FIRST_ID        0x0840
-#define GPS_COURS_LAST_ID         0x084F
-#define GPS_TIME_DATE_FIRST_ID    0x0850
-#define GPS_TIME_DATE_LAST_ID     0x085F
-#define A3_FIRST_ID               0x0900
-#define A3_LAST_ID                0x090F
-#define A4_FIRST_ID               0x0910
-#define A4_LAST_ID                0x091F
-#define AIR_SPEED_FIRST_ID        0x0A00
-#define AIR_SPEED_LAST_ID         0x0A0F
-#define RBOX_BATT1_FIRST_ID       0x0B00
-#define RBOX_BATT1_LAST_ID        0x0B0F
-#define RBOX_BATT2_FIRST_ID       0x0B10
-#define RBOX_BATT2_LAST_ID        0x0B1F
-#define RBOX_STATE_FIRST_ID       0x0B20
-#define RBOX_STATE_LAST_ID        0x0B2F
-#define RBOX_CNSP_FIRST_ID        0x0B30
-#define RBOX_CNSP_LAST_ID         0x0B3F
-#define SD1_FIRST_ID              0x0B40
-#define SD1_LAST_ID               0x0B4F
-#define ESC_POWER_FIRST_ID        0x0B50
-#define ESC_POWER_LAST_ID         0x0B5F
-#define ESC_RPM_CONS_FIRST_ID     0x0B60
-#define ESC_RPM_CONS_LAST_ID      0x0B6f
-#define ESC_TEMPERATURE_FIRST_ID  0x0B70
-#define ESC_TEMPERATURE_LAST_ID   0x0B7f
-#define X8R_FIRST_ID              0x0c20
-#define X8R_LAST_ID               0x0c2F
-#define S6R_FIRST_ID              0x0c30
-#define S6R_LAST_ID               0x0c3F
-#define GASSUIT_TEMP1_FIRST_ID    0x0D00
-#define GASSUIT_TEMP1_LAST_ID     0x0D0F
-#define GASSUIT_TEMP2_FIRST_ID    0x0D10
-#define GASSUIT_TEMP2_LAST_ID     0x0D1F
-#define GASSUIT_SPEED_FIRST_ID    0x0D20
-#define GASSUIT_SPEED_LAST_ID     0x0D2F
-#define GASSUIT_RES_VOL_FIRST_ID  0x0D30
-#define GASSUIT_RES_VOL_LAST_ID   0x0D3F
-#define GASSUIT_RES_PERC_FIRST_ID 0x0D40
-#define GASSUIT_RES_PERC_LAST_ID  0x0D4F
-#define GASSUIT_FLOW_FIRST_ID     0x0D50
-#define GASSUIT_FLOW_LAST_ID      0x0D5F
-#define GASSUIT_MAX_FLOW_FIRST_ID 0x0D60
-#define GASSUIT_MAX_FLOW_LAST_ID  0x0D6f
-#define GASSUIT_AVG_FLOW_FIRST_ID 0x0D70
-#define GASSUIT_AVG_FLOW_LAST_ID  0x0D7f
-#define SBEC_POWER_FIRST_ID       0x0E50
-#define SBEC_POWER_LAST_ID        0x0E5F
-#define DIY_FIRST_ID              0x5100
-#define HALL_EFFECT_ID            0x5131
-#ifdef BETAFLIGHT_SENSORS
-#define BF_PITCH_ID               0x5230
-#define BF_ROLL_ID                0x5240
-#endif
-#define DIY_LAST_ID               0x52FF
-#define DIY_STREAM_FIRST_ID       0x5000
-#define DIY_STREAM_LAST_ID        0x50FF
-#define FACT_TEST_ID              0xF000
-#define RSSI_ID                   0xF101
-#define ADC1_ID                   0xF102
-#define ADC2_ID                   0xF103
-#define BATT_ID                   0xF104
-#define RAS_ID                    0xF105
-#define XJT_VERSION_ID            0xF106
-#define R9_PWR_ID                 0xF107
-#define SP2UART_A_ID              0xFD00
-#define SP2UART_B_ID              0xFD01
-#define FUEL_QTY_FIRST_ID         0x0A10
-#define FUEL_QTY_LAST_ID          0x0A1F
+#define ZSTR_VFR                       "VFR"
+#define ZSTR_RSSI                      "RSSI"
+#define ZSTR_R9PW                      "R9PW"
+#define ZSTR_RAS                       "SWR"
+#define ZSTR_A1                        "A1"
+#define ZSTR_A2                        "A2"
+#define ZSTR_A3                        "A3"
+#define ZSTR_A4                        "A4"
+#define ZSTR_BATT                      "RxBt"
+#define ZSTR_ALT                       "Alt"
+#define ZSTR_TEMP1                     "Tmp1"
+#define ZSTR_TEMP2                     "Tmp2"
+#define ZSTR_TEMP3                     "Tmp3"
+#define ZSTR_TEMP4                     "Tmp4"
+#define ZSTR_RPM2                      "RPM2"
+#define ZSTR_PRES                      "Pres"
+#define ZSTR_ODO1                      "Odo1"
+#define ZSTR_ODO2                      "Odo2"
+#define ZSTR_TXV                       "TX_V"
+#define ZSTR_CURR_SERVO1               "CSv1"
+#define ZSTR_CURR_SERVO2               "CSv2"
+#define ZSTR_CURR_SERVO3               "CSv3"
+#define ZSTR_CURR_SERVO4               "CSv4"
+#define ZSTR_DIST                      "Dist"
+#define ZSTR_ARM                       "Arm"
+#define ZSTR_C50                       "C50"
+#define ZSTR_C200                      "C200"
+#define ZSTR_RPM                       "RPM"
+#define ZSTR_FUEL                      "Fuel"
+#define ZSTR_VSPD                      "VSpd"
+#define ZSTR_ACCX                      "AccX"
+#define ZSTR_ACCY                      "AccY"
+#define ZSTR_ACCZ                      "AccZ"
+#define ZSTR_GYROX                     "GyrX"
+#define ZSTR_GYROY                     "GyrY"
+#define ZSTR_GYROZ                     "GyrZ"
+#define ZSTR_CURR                      "Current"
+#define ZSTR_CAPACITY                  "Capa"
+#define ZSTR_VFAS                      "VFAS"
+#define ZSTR_BATT_PERCENT              "Bat%"
+#define ZSTR_ASPD                      "Air speed"
+#define ZSTR_GSPD                      "GPS speed"
+#define ZSTR_HDG                       "Heading"
+#define ZSTR_SATELLITES                "Sats"
+#define ZSTR_CELLS                     "Cells"
+#define ZSTR_GPSALT                    "GPS Alt"
+#define ZSTR_GPSDATETIME               "Date"
+#define ZSTR_GPS                       "GPS"
+#define ZSTR_BATT1_VOLTAGE             "RB1V"
+#define ZSTR_BATT2_VOLTAGE             "RB2V"
+#define ZSTR_BATT1_CURRENT             "RB1A"
+#define ZSTR_BATT2_CURRENT             "RB2A"
+#define ZSTR_BATT1_CONSUMPTION         "RB1C"
+#define ZSTR_BATT2_CONSUMPTION         "RB2C"
+#define ZSTR_BATT1_TEMP                "RB1T"
+#define ZSTR_BATT2_TEMP                "RB2T"
+#define ZSTR_RB_STATE                  "RBS"
+#define ZSTR_CHANS_STATE               "RBCS"
+#define ZSTR_RX_RSSI1                  "1RSS"
+#define ZSTR_RX_RSSI2                  "2RSS"
+#define ZSTR_RX_QUALITY                "RQly"
+#define ZSTR_RX_SNR                    "RSNR"
+#define ZSTR_RX_NOISE                  "RNse"
+#define ZSTR_ANTENNA                   "ANT"
+#define ZSTR_RF_MODE                   "RFMD"
+#define ZSTR_TX_POWER                  "TPWR"
+#define ZSTR_TX_RSSI                   "TRSS"
+#define ZSTR_TX_QUALITY                "TQly"
+#define ZSTR_TX_SNR                    "TSNR"
+#define ZSTR_TX_NOISE                  "TNse"
+#define ZSTR_PITCH                     "Pitch"
+#define ZSTR_ROLL                      "Roll"
+#define ZSTR_YAW                       "Yaw"
+#define ZSTR_FLIGHT_MODE               "FM"
+#define ZSTR_THROTTLE                  "Thr"
+#define ZSTR_QOS_A                     "FdeA"
+#define ZSTR_QOS_B                     "FdeB"
+#define ZSTR_QOS_L                     "FdeL"
+#define ZSTR_QOS_R                     "FdeR"
+#define ZSTR_QOS_F                     "FLss"
+#define ZSTR_QOS_H                     "Hold"
+#define ZSTR_BIND                      "BIND"
+#define ZSTR_LAP_NUMBER                "Lap "
+#define ZSTR_GATE_NUMBER               "Gate"
+#define ZSTR_LAP_TIME                  "LapT"
+#define ZSTR_GATE_TIME                 "GteT"
+#define ZSTR_ESC_VOLTAGE               "EscV"
+#define ZSTR_ESC_CURRENT               "EscA"
+#define ZSTR_ESC_RPM                   "EscR"
+#define ZSTR_ESC_CONSUMPTION           "EscC"
+#define ZSTR_ESC_TEMP                  "EscT"
+#define ZSTR_SD1_CHANNEL               "Chan"
+#define ZSTR_GASSUIT_TEMP1             "GTp1"
+#define ZSTR_GASSUIT_TEMP2             "GTp2"
+#define ZSTR_GASSUIT_RPM               "GRPM"
+#define ZSTR_GASSUIT_FLOW              "GFlo"
+#define ZSTR_GASSUIT_CONS              "GFue"
+#define ZSTR_GASSUIT_RES_VOL           "GRVl"
+#define ZSTR_GASSUIT_RES_PERC          "GRPc"
+#define ZSTR_GASSUIT_MAX_FLOW          "GMFl"
+#define ZSTR_GASSUIT_AVG_FLOW          "GAFl"
+#define ZSTR_SBEC_VOLTAGE              "BecV"
+#define ZSTR_SBEC_CURRENT              "BecA"
+#define ZSTR_RB3040_EXTRA_STATE        "RBES"
+#define ZSTR_RB3040_CHANNEL1           "CH1A"
+#define ZSTR_RB3040_CHANNEL2           "CH2A"
+#define ZSTR_RB3040_CHANNEL3           "CH3A"
+#define ZSTR_RB3040_CHANNEL4           "CH4A"
+#define ZSTR_RB3040_CHANNEL5           "CH5A"
+#define ZSTR_RB3040_CHANNEL6           "CH6A"
+#define ZSTR_RB3040_CHANNEL7           "CH7A"
+#define ZSTR_RB3040_CHANNEL8           "CH8A"
+#define ZSTR_SERVO_CURRENT             "SrvA"
+#define ZSTR_SERVO_VOLTAGE             "SrvV"
+#define ZSTR_SERVO_TEMPERATURE         "SrvT"
+#define ZSTR_SERVO_STATUS              "SrvS"
+
+#define UNKNOWN_SENSOR "Unknown"
 
 enum SensorUnit {
   UNIT_RAW,
@@ -123,6 +128,7 @@ enum SensorUnit {
   UNIT_AMPS,
   UNIT_KTS,
   UNIT_METERS_PER_SECOND,
+  UNIT_KMH,
   UNIT_METERS,
   UNIT_CELSIUS,
   UNIT_PERCENT,
@@ -133,6 +139,7 @@ enum SensorUnit {
   UNIT_RPMS,
   UNIT_G,
   UNIT_DEGREE,
+  UNIT_RADIANS,
   UNIT_MILLILITERS,
   UNIT_MILLILITERS_PER_MINUTE,
   UNIT_CELLS,
@@ -142,15 +149,54 @@ enum SensorUnit {
   UNIT_TEXT
 };
 
+enum SensorDataType {
+  NATIVE,
+  GPS_LONGITUDE,
+  GPS_LATITUDE
+};
+
 class SensorInfo final {
   public:
   const uint16_t firstId;
   const uint16_t lastId;
   const uint8_t subId;
+  const uint8_t subCount;
   const char *const name;
   const SensorUnit unit;
   const uint8_t precision;
   const char* getUnitName() const;
 };
 
-const SensorInfo* getSensorInfo(uint16_t id, uint8_t subId);
+union Value {
+  int32_t numeric = 0;
+  struct Gps {
+    int32_t latitude;
+    int32_t longitude;
+  } gps;
+};
+
+class Sensor final {
+  private:
+  void setGpsValue(uint32_t sensorData);
+  void setGpsLongitude(uint32_t sensorData);
+  void setGpsLatitude(uint32_t sensorData);
+  void setNumericValue(uint32_t sensorData);
+  public:
+  int16_t _index = -1;
+  uint8_t physicalId = 0;
+  uint16_t sensorId = 0;
+  union Value value;
+  union Value lastChangedValue;
+  const SensorInfo *info = nullptr;
+  uint32_t lastUpdated = 0;
+  bool hasChangedSinceProcessed = false;
+  uint32_t lastProcessed = 0;
+
+  void setValue(uint32_t sensorData, SensorDataType sensorDataType);
+};
+
+void processPollPacket(uint8_t physicalId);
+void outputSensorPacket(uint8_t physicalId, uint16_t sensorId, uint32_t sensorData);
+void processSensorPacket(uint8_t physicalId, uint16_t sensorId, uint8_t subId, uint32_t sensorData, SensorDataType sensorDataType=NATIVE);
+
+#endif

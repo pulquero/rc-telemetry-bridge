@@ -1,184 +1,50 @@
 #include "protocol.h"
-#include "debug.h"
+#include "smartport.h"
+#include "smartport-api.h"
+#include "crsf.h"
+#include "crsf-api.h"
+#include "json.h"
 
-static int stuffByte(uint8_t*const data, uint8_t b);
-static uint16_t read16(uint8_t*const data);
-static uint32_t read32(uint8_t*const data);
-
-static SPortPacket* sportPacket;
+static Telemetry* _telemetry;
 
 void protocolBegin(Telemetry* telemetry) {
-  if (telemetry->config.input.source == SOURCE_BLE) {
-    sportPacket = new BleSPortPacket();
+  _telemetry = telemetry;
+  if (telemetry->config.input.protocol == PROTOCOL_CRSF) {
+    crsfInit();
   } else {
-    sportPacket = new SPortPacket();
-  }
-}
-
-bool SPortPacket::add(uint8_t b) {
-  // read current packet
-  if (b == BYTE_STUFFING) {
-    // start of escape sequence
-    byteStuffing = true;
-  } else {
-    if (byteStuffing) {
-      // unescape byte
-      b ^= STUFFING_MASK;
-      byteStuffing = false;
-    }
-
-    if (pos < SPORT_BUFFER_SIZE) {
-      buffer[pos++] = b;
-      updateChecksum(b);
+    if (telemetry->config.input.source == SOURCE_BLE) {
+      sportInit(true);
     } else {
-      // unexpected state
-      LOGD("Ignoring data - SmartPort packet buffer full");
-      return false;
+      sportInit(false);
     }
   }
-  return true;
 }
 
-void SPortPacket::updateChecksum(uint8_t b) {
-  if (pos > 1) {
-    checksum += b;
-    checksum += checksum >> 8;
-    checksum &= 0x00FF;
-  }
-}
-
-bool SPortPacket::isValid() {
-  return checksum == 0xFF;
-}
-
-void SPortPacket::clear() {
-  pos = 0;
-  byteStuffing = false;
-  checksum = 0;
-}
-
-uint8_t SPortPacket::physicalId() {
-  return buffer[0] & 0x1F;
-}
-
-uint8_t SPortPacket::frameId() {
-  return buffer[1];
-}
-
-uint16_t SPortPacket::sensorId() {
-  return read16(buffer+2);
-}
-
-uint32_t SPortPacket::sensorData() {
-  return read32(buffer+4);
-}
-
-int SPortPacket::size() {
-  return pos;
-}
-
-
-void BleSPortPacket::updateChecksum(uint8_t b) {
-  checksum ^= b;
-}
-
-bool BleSPortPacket::isValid() {
-  return checksum == 0;
-}
-
-
-int sportOnReceive(uint8_t b) {
-  static bool waitingForFirstPacket = true;
-
-  if (b == START_STOP) {
-    const int packetLen = sportPacket->size();
-    if (waitingForFirstPacket) {
-      // start of our first packet
-      waitingForFirstPacket = false;
-    } else if (packetLen > 0) {
-      // end of current packet - start of next
-      uint8_t physicalId = sportPacket->physicalId();
-      if (packetLen == SPORT_DATA_PACKET_LEN) {
-        if (sportPacket->isValid()) {
-          uint8_t frameId = sportPacket->frameId();
-          if (frameId == DATA_FRAME) {
-            processSensorPacket(physicalId, sportPacket->sensorId(), sportPacket->sensorData());
-          }
-        } else {
-          LOGD("SmartPort packet checksum failed");
-        }
-      } else if (packetLen == SPORT_POLL_PACKET_LEN) {
-        processPollPacket(physicalId);
-      } else {
-        LOGD("Ignoring SmartPort packet of incorrect length: %d", packetLen);
-      }
-    }
-    sportPacket->clear();
-    return packetLen; // return +ve value to indicate complete packet
-  } else if (!waitingForFirstPacket) {
-    // read current packet
-    if (!sportPacket->add(b)) {
-      // dropped some bytes or something
-      waitingForFirstPacket = true;
-      sportPacket->clear();
-    }
-    return -sportPacket->size(); // return -ve value to indicate incomplete packet
+int protocolOnReceive(uint8_t b) {
+  if (_telemetry->config.input.protocol == PROTOCOL_CRSF) {
+    return crsfOnReceive(b);
   } else {
-    return 0;
+    return sportOnReceive(b);
   }
 }
 
-int writeSensorPacket(uint8_t*const out, uint8_t physicalId, uint16_t sensorId, uint32_t sensorData, bool includeStart) {
-  int pos = 0;
-  if (includeStart) {
-    out[pos++] = START_STOP;
-  }
-  out[pos++] = physicalId;
-  const int packetStartPos = pos;
-  out[pos++] = DATA_FRAME;
-  // little endian
-  pos += stuffByte(out+pos, sensorId);
-  pos += stuffByte(out+pos, (sensorId>>8));
-  pos += stuffByte(out+pos, sensorData);
-  pos += stuffByte(out+pos, (sensorData>>8));
-  pos += stuffByte(out+pos, (sensorData>>16));
-  pos += stuffByte(out+pos, (sensorData>>24));
-  uint16_t checksum = 0;
-  for (int i=packetStartPos; i<pos; i++) {
-    checksum += out[i];
-  }
-  out[pos++] = 0xFF - ((checksum & 0x00FF) + (checksum >> 8));
-  out[pos++] = START_STOP;
-  return pos;
-}
-
-int stuffByte(uint8_t*const data, uint8_t b) {
-  switch (b) {
-    case START_STOP:
-    case BYTE_STUFFING:
-      data[0] = BYTE_STUFFING;
-      data[1] = b ^ STUFFING_MASK;
-      return 2;
-    default:
-      data[0] = b;
-      return 1;
+const SensorInfo* protocolGetSensorInfo(uint16_t id, uint8_t subId) {
+  if (_telemetry->config.input.protocol == PROTOCOL_CRSF) {
+    return crsfGetSensorInfo(id, subId);
+  } else {
+    return sportGetSensorInfo(id, subId);
   }
 }
 
-uint16_t read16(uint8_t*const data) {
-  uint16_t result;
-  // little endian
-  result = data[0];
-  result |= data[1] << 8;
-  return result;
-}
-
-uint32_t read32(uint8_t*const data) {
-  uint32_t result;
-  // little endian
-  result = data[0];
-  result |= data[1] << 8;
-  result |= data[2] << 16;
-  result |= data[3] << 24;
-  return result;
+int protocolWriteJsonSensorValue(char* out, const Sensor& sensor) {
+  if (sensor.info) {
+    if (_telemetry->config.input.protocol == PROTOCOL_CRSF) {
+      return crsfWriteJsonSensorValue(out, sensor);
+    } else {
+      return sportWriteJsonSensorValue(out, sensor);
+    }
+  } else {
+    // unknown sensor (max len 11)
+    return jsonWriteNumber(out, sensor.value.numeric);
+  }
 }
