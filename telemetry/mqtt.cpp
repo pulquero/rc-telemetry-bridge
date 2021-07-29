@@ -89,15 +89,20 @@ bool ensureConnected() {
 bool mqttPublishSensor(const Sensor& sensor) {
   if (isMqttRunning && WiFi.isConnected()) {
     if (ensureConnected()) {
-      char value[JSON_VALUE_BUFFER_SIZE];
-      int len = protocolWriteJsonSensorValue(value, sensor);
+      char* payload = new char[PAYLOAD_BUFFER_SIZE];
+      int payloadPos = sprints(payload, "{\"value\": ");
+      int len = protocolWriteJsonSensorValue(payload+payloadPos, sensor);
       if (len < 0) {
         LOGE("protocolWriteJsonSensorValue error: %d", len);
+        delete[] payload;
         return false;
       } else if (len > JSON_VALUE_BUFFER_SIZE-1) {
         LOGE("Value of sensor %04X exceeded buffer size!", sensor.sensorId);
+        delete[] payload;
         return false;
       }
+      payloadPos += len;
+
       const char *name;
       const char *unit;
       int8_t pos;
@@ -115,44 +120,54 @@ bool mqttPublishSensor(const Sensor& sensor) {
         unit = "";
         pos = -1;
       }
-      char topicBuf[TOPIC_BUFFER_SIZE];
+
+      char* topicBuf = new char[TOPIC_BUFFER_SIZE];
       len = sprintf(topicBuf, "%s/%02X/%s", _telemetry->config.mqtt.topic, sensor.physicalId, name);
       if (len > 0 && len < TOPIC_BUFFER_SIZE && pos > 0) {
-        int posLen = sprintf(&(topicBuf[len]), "/%d", pos);
+        int posLen = sprintf(topicBuf+len, "/%d", pos);
         len = (posLen >=0 ? len+posLen : -1);
       }
       if (len > 0 && len < TOPIC_BUFFER_SIZE && sensor.info && sensor.info->subCount > 1) {
         int subLen;
         if (pos > 0) {
-          subLen = sprintf(&(topicBuf[len]), "/%d", sensor.info->subId+1);
+          subLen = sprintf(topicBuf+len, "/%d", sensor.info->subId+1);
         } else {
-          subLen = sprintf(&(topicBuf[len]), "//%d", sensor.info->subId+1);
+          subLen = sprintf(topicBuf+len, "//%d", sensor.info->subId+1);
         }
         len = (subLen >=0 ? len+subLen : -1);
       }
       if (len < 0) {
         LOGE("sprintf error: %d", len);
+        delete[] topicBuf;
+        delete[] payload;
         return false;
       } else if (len > TOPIC_BUFFER_SIZE-1) {
         LOGE("Topic buffer size exceeded! (%d)", len);
+        delete[] topicBuf;
+        delete[] payload;
         return false;
       }
       // remove any leading '/'
       char* topic = (topicBuf[0] == '/') ? topicBuf+1 : topicBuf;
-      char payload[PAYLOAD_BUFFER_SIZE];
       if (strlen(unit) > 0) {
-        len = sprintf(payload, "{\"value\": %s, \"unit\": \"%s\"}", value, unit);
+        len = sprints(payload+payloadPos, ", \"unit\": \"");
+        payloadPos += len;
+        len = sprints(payload+payloadPos, unit);
+        payloadPos += len;
+        payload[payloadPos++] = '\"';
+      }
+      payload[payloadPos++] = '}';
+      payload[payloadPos++] = '\0';
+      bool rc;
+      if (payloadPos <= PAYLOAD_BUFFER_SIZE) {
+        rc = mqttClient->publish(topic, payload);
       } else {
-        len = sprintf(payload, "{\"value\": %s}", value);
+        LOGE("Payload buffer size exceeded! (%d)", payloadPos);
+        rc = false;
       }
-      if (len < 0) {
-        LOGE("sprintf error: %d", len);
-        return false;
-      } else if (len > PAYLOAD_BUFFER_SIZE-1) {
-        LOGE("Payload buffer size exceeded! (%d)", len);
-        return false;
-      }
-      return mqttClient->publish(topic, payload);
+      delete[] topicBuf;
+      delete[] payload;
+      return rc;
     }
   }
   return false;

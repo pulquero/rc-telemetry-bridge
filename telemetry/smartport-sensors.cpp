@@ -131,63 +131,63 @@ int sportWriteJsonFlightModeArray(char* out, uint32_t modes) {
   uint32_t v = modes;
   uint8_t flag = v % 10;
   if (flag == 1) {
-    pos += sprintf(out+pos, "\"DISARMED\",");
+    pos += sprints(out+pos, "\"DISARMED\",");
   } else if(flag == 2) {
-    pos += sprintf(out+pos, "\"CANT_ARM\",");
+    pos += sprints(out+pos, "\"CANT_ARM\",");
   } else if(flag == 5) {
-    pos += sprintf(out+pos, "\"ARMED\",");
+    pos += sprints(out+pos, "\"ARMED\",");
   }
 
   // tens
   v /= 10;
   flag = v % 10;
   if ((flag & 1) == 1) {
-    pos += sprintf(out+pos, "\"ANGLE\",");
+    pos += sprints(out+pos, "\"ANGLE\",");
   }
   if((flag & 2) == 2) {
-    pos += sprintf(out+pos, "\"HORIZON\",");
+    pos += sprints(out+pos, "\"HORIZON\",");
   }
   if((flag & 4) == 4) {
-    pos += sprintf(out+pos, "\"MANUAL\",");
+    pos += sprints(out+pos, "\"MANUAL\",");
   }
 
   // hundreds
   v /= 10;
   flag = v % 10;
   if ((flag & 1) == 1) {
-    pos += sprintf(out+pos, "\"HEADING\",");
+    pos += sprints(out+pos, "\"HEADING\",");
   }
   if((flag & 2) == 2) {
-    pos += sprintf(out+pos, "\"NAV_ALTHOLD\",");
+    pos += sprints(out+pos, "\"NAV_ALTHOLD\",");
   }
   if((flag & 4) == 4) {
-    pos += sprintf(out+pos, "\"NAV_POSHOLD\",");
+    pos += sprints(out+pos, "\"NAV_POSHOLD\",");
   }
 
   // thousands
   v /= 10;
   flag = v % 10;
   if ((flag & 1) == 1) {
-    pos += sprintf(out+pos, "\"NAV_RTH\",");
+    pos += sprints(out+pos, "\"NAV_RTH\",");
   }
   if ((flag & 8) == 8) {
-    pos += sprintf(out+pos, "\"NAV_COURSE_HOLD\",");
+    pos += sprints(out+pos, "\"NAV_COURSE_HOLD\",");
   } else if ((flag & 2) == 2) {
-    pos += sprintf(out+pos, "\"NAV_WP\",");
+    pos += sprints(out+pos, "\"NAV_WP\",");
   } else if ((flag & 4) == 4) {
-    pos += sprintf(out+pos, "\"HEADFREE\",");
+    pos += sprints(out+pos, "\"HEADFREE\",");
   }
 
   // ten thousands
   v /= 10;
   flag = v % 10;
   if ((flag & 1) == 1) {
-    pos += sprintf(out+pos, "\"FLAPERON\",");
+    pos += sprints(out+pos, "\"FLAPERON\",");
   }
   if ((flag & 4) == 4) {
-    pos += sprintf(out+pos, "\"FAILSAFE\",");
+    pos += sprints(out+pos, "\"FAILSAFE\",");
   } else if ((flag & 2) == 2) {
-    pos += sprintf(out+pos, "\"AUTO_TUNE\",");
+    pos += sprints(out+pos, "\"AUTO_TUNE\",");
   }
 
   out[pos-1] = ']';

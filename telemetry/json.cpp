@@ -1,12 +1,21 @@
 #include "platform.h"
 #include "json.h"
+#include "sensors.h"
 
 int jsonWriteGps(char* out, int32_t lon, int32_t lat) {
-  char szLon[16], szLat[16];
-  dtostrf(lon/10000.0/60.0, 9, 7, szLon);
-  dtostrf(lat/10000.0/60.0, 9, 7, szLat);
-  // max len 36
-  return sprintf(out, "[%s, %s]", szLon, szLat);
+  char szValue[16];
+  int pos = 0;
+  out[pos++] = '[';
+  dtostrf(lon/10000.0/60.0, 9, 7, szValue);
+  pos += sprints(out+pos, szValue);
+  out[pos++] = ',';
+  out[pos++] = ' ';
+  dtostrf(lat/10000.0/60.0, 9, 7, szValue);
+  pos += sprints(out+pos, szValue);
+  out[pos++] = ']';
+  out[pos] = '\0';
+  // return strlen (i.e. excluding '\0') - max len 36
+  return pos;
 }
 
 int jsonWriteNumber(char* out, int32_t value, uint8_t precision) {

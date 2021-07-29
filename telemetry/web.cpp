@@ -105,15 +105,17 @@ void webLoop(uint32_t ms) {
 void sendJson(AsyncWebServerRequest* request) {
   AsyncResponseStream* response = request->beginResponseStream("application/json");
   response->print("{\"sensors\": [\n");
+  char* json = new char[JSON_BUFFER_SIZE];
   bool isFirst = true;
   for (int i=0; i<_telemetry->numSensors; i++) {
-    char json[JSON_BUFFER_SIZE];
     int len = writeSensorJson(json, _telemetry->sensors[i], true);
     if (len < 0) {
       LOGE("writeSensorJson error: %d", len);
+      delete[] json;
       return;
     } else if (len > JSON_BUFFER_SIZE) {
       LOGE("JSON buffer size exceeded! (%d)", len);
+      delete[] json;
       return;
     }
     if (isFirst) {
@@ -124,6 +126,7 @@ void sendJson(AsyncWebServerRequest* request) {
     response->print(json);
   }
   response->print("\n]}");
+  delete[] json;
   request->send(response);
 }
 
@@ -300,17 +303,20 @@ void sendSettings(AsyncWebServerRequest* request) {
 bool webEmitSensor(const Sensor& sensor) {
   static uint32_t lastEmit = 0;
   if (isWebRunning && webSocket->count() > 0 && (millis() - lastEmit) > WS_EMIT_RATE) {
-    char minJson[JSON_BUFFER_SIZE];
+    char* minJson = new char[JSON_BUFFER_SIZE];
     int len = writeSensorJson(minJson, sensor, false);
     if (len < 0) {
       LOGE("writeSensorJson error: %d", len);
+      delete[] minJson;
       return false;
     } else if (len > JSON_BUFFER_SIZE) {
       LOGE("WS buffer size exceeded! (%d)", len);
+      delete[] minJson;
       return false;
     }
     int16_t idx = sensor._index;
     bool dataSent = false;
+    char *fullJson = nullptr;
     for (AsyncWebSocketClient* c : webSocket->getClients()) {
       bool* haveSentFull = (bool*) (c->_tempObject);
       if (haveSentFull && !c->queueIsFull()) {
@@ -318,20 +324,34 @@ bool webEmitSensor(const Sensor& sensor) {
           c->text(minJson);
           dataSent = true;
         } else {
-          char fullJson[JSON_BUFFER_SIZE];
-          int len = writeSensorJson(fullJson, sensor, true);
-          if (len < 0) {
-            LOGE("writeSensorJson error: %d", len);
-            return false;
-          } else if (len > JSON_BUFFER_SIZE) {
-            LOGE("WS buffer size exceeded! (%d)", len);
-            return false;
+          if (!fullJson) {
+            fullJson = new char[JSON_BUFFER_SIZE];
+            int len = writeSensorJson(fullJson, sensor, true);
+            if (len < 0) {
+              LOGE("writeSensorJson error: %d", len);
+              delete[] minJson;
+              if (fullJson) {
+                delete[] fullJson;
+              }
+              return false;
+            } else if (len > JSON_BUFFER_SIZE) {
+              LOGE("WS buffer size exceeded! (%d)", len);
+              delete[] minJson;
+              if (fullJson) {
+                delete[] fullJson;
+              }
+              return false;
+            }
           }
           c->text(fullJson);
           dataSent = true;
           haveSentFull[idx] = true;
         }
       }
+    }
+    delete[] minJson;
+    if (fullJson) {
+        delete[] fullJson;
     }
     lastEmit = millis();
     return dataSent;
@@ -359,13 +379,15 @@ int writeSensorJson(char* out, const Sensor& sensor, bool all) {
     return -1;
   }
 
-  char value[JSON_VALUE_BUFFER_SIZE];
+  char* value = new char[JSON_VALUE_BUFFER_SIZE];
   len = protocolWriteJsonSensorValue(value, sensor);
   if (len < 0) {
     LOGE("protocolWriteJsonSensorValue error: %d", len);
+    delete[] value;
     return -1;
   } else if (len > JSON_VALUE_BUFFER_SIZE-1) {
     LOGE("Value of sensor %04X exceeded buffer size!", sensor.sensorId);
+    delete[] value;
     return -1;
   }
 
@@ -380,8 +402,10 @@ int writeSensorJson(char* out, const Sensor& sensor, bool all) {
       name = UNKNOWN_SENSOR;
       unit = "";
     }
-    return sprintf(out, "{\"physicalId\": \"%02X\", \"sensorId\": \"%s\", \"name\": \"%s\", \"value\": %s, \"unit\": \"%s\"}", sensor.physicalId, sensorId, name, value, unit);
+    len = sprintf(out, "{\"physicalId\": \"%02X\", \"sensorId\": \"%s\", \"name\": \"%s\", \"value\": %s, \"unit\": \"%s\"}", sensor.physicalId, sensorId, name, value, unit);
   } else {
-    return sprintf(out, "{\"physicalId\": \"%02X\", \"sensorId\": \"%s\", \"value\": %s}", sensor.physicalId, sensorId, value);
+    len = sprintf(out, "{\"physicalId\": \"%02X\", \"sensorId\": \"%s\", \"value\": %s}", sensor.physicalId, sensorId, value);
   }
+  delete[] value;
+  return len;
 }

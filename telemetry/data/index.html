@@ -59,6 +59,14 @@ if (hasL) {
 	altMarkers = [];
 }
 
+htmlSensorValue = function(value, unit) {
+	if (unit === 'rad') {
+		return (value*180.0/Math.PI).toFixed(1) + '°';
+	} else {
+		return value.toString() + unit;
+	}
+};
+
 updateTable = function(sensor) {
 	const id = sensor.physicalId+'/'+sensor.sensorId;
 	let row = document.getElementById(id);
@@ -81,21 +89,20 @@ updateTable = function(sensor) {
 		row.insertCell(-1).innerHTML = sensor.physicalId;
 		row.insertCell(-1).innerHTML = sensor.sensorId;
 		row.insertCell(-1).innerHTML = sensor.name;
-		const value = sensor.value.toString()+sensor.unit;
-		row.insertCell(-1).innerHTML = value;
+		row.insertCell(-1).innerHTML = htmlSensorValue(sensor.value, sensor.unit);
 		row.insertCell(-1)
 		row.insertCell(-1)
 	} else {
 		row.dataset.value = sensor.value;
-		const value = sensor.value.toString()+row.dataset.unit;
-		row.cells.item(3).innerHTML = value;
+		const displayValue = htmlSensorValue(sensor.value, row.dataset.unit);
+		row.cells.item(3).innerHTML = displayValue;
 		if (typeof sensor.value === 'number') {
 			if (!('minValue' in row.dataset) || sensor.value < row.dataset.minValue) {
-				row.cells.item(4).innerHTML = value;
+				row.cells.item(4).innerHTML = displayValue;
 				row.dataset.minValue = sensor.value;
 			}
 			if (!('maxValue' in row.dataset) || sensor.value > row.dataset.maxValue) {
-				row.cells.item(5).innerHTML = value;
+				row.cells.item(5).innerHTML = displayValue;
 				row.dataset.maxValue = sensor.value;
 			}
 		}

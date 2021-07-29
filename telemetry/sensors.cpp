@@ -1,3 +1,4 @@
+#include <string.h>
 #include "sensors.h"
 
 const char* SensorInfo::getUnitName() const {
@@ -16,6 +17,12 @@ const char* SensorInfo::getUnitName() const {
     case UNIT_DB: return "dB";
     case UNIT_G: return "g";
     case UNIT_DEGREE: return "°";
+    case UNIT_RADIANS: return "rad";
     default: return "";
   }
+}
+
+int sprints(char* dest, const char* src) {
+  strcpy(dest, src);
+  return strlen(src);
 }

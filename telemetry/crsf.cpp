@@ -78,14 +78,15 @@ void crsfProcessPacket(CrsfPacket* packet) {
   uint8_t addr = packet->deviceAddress();
   switch (packet->frameType()) {
     case CF_VARIO_ID:
-      processSensorPacket(addr, CF_VARIO_ID, 0, packet->read16(0));
+      processSensorPacket(addr, CF_VARIO_ID, 0, (int16_t) packet->read16(0));
       break;
     case GPS_ID:
-      processSensorPacket(addr, GPS_ID, 0, packet->read32(0), GPS_LATITUDE);
-      processSensorPacket(addr, GPS_ID, 0, packet->read32(4), GPS_LONGITUDE);
+      // 60/1000
+      processSensorPacket(addr, GPS_ID, 0, ((int32_t)packet->read32(0))/10*3/5, GPS_LATITUDE);
+      processSensorPacket(addr, GPS_ID, 0, ((int32_t)packet->read32(4))/10*3/5, GPS_LONGITUDE);
       processSensorPacket(addr, GPS_ID, 1, packet->read16(8));
-      processSensorPacket(addr, GPS_ID, 2, packet->read16(10));
-      processSensorPacket(addr, GPS_ID, 3, packet->read16(12));
+      processSensorPacket(addr, GPS_ID, 2, (int16_t) packet->read16(10));
+      processSensorPacket(addr, GPS_ID, 3, ((int32_t) packet->read16(12)) - 1000);
       processSensorPacket(addr, GPS_ID, 4, packet->read8(14));
       break;
     case LINK_ID:
@@ -107,9 +108,9 @@ void crsfProcessPacket(CrsfPacket* packet) {
       processSensorPacket(addr, BATTERY_ID, 3, packet->read8(7));
       break;
     case ATTITUDE_ID:
-      processSensorPacket(addr, ATTITUDE_ID, 0, packet->read16(0));
-      processSensorPacket(addr, ATTITUDE_ID, 1, packet->read16(2));
-      processSensorPacket(addr, ATTITUDE_ID, 2, packet->read16(4));
+      processSensorPacket(addr, ATTITUDE_ID, 0, (int16_t) packet->read16(0)/10);
+      processSensorPacket(addr, ATTITUDE_ID, 1, (int16_t) packet->read16(2)/10);
+      processSensorPacket(addr, ATTITUDE_ID, 2, (int16_t) packet->read16(4)/10);
       break;
     case FLIGHT_MODE_ID:
       processSensorPacket(addr, FLIGHT_MODE_ID, 0, toFlightModeCode(packet->readText()));

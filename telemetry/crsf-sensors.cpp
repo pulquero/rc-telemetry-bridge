@@ -55,7 +55,7 @@ int crsfWriteJsonSensorValue(char* out, const Sensor& sensor) {
 
 int crsfWriteJsonFlightMode(char* out, uint32_t mode) {
   if (mode < sizeof(flightModeValues)/sizeof(flightModeValues[0])) {
-    return sprintf(out, "%s", flightModeValues[mode]);
+    return sprintf(out, "\"%s\"", flightModeValues[mode]);
   } else {
     return -1;
   }

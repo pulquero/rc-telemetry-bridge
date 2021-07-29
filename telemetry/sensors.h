@@ -198,5 +198,6 @@ class Sensor final {
 void processPollPacket(uint8_t physicalId);
 void outputSensorPacket(uint8_t physicalId, uint16_t sensorId, uint32_t sensorData);
 void processSensorPacket(uint8_t physicalId, uint16_t sensorId, uint8_t subId, uint32_t sensorData, SensorDataType sensorDataType=NATIVE);
+int sprints(char* dest, const char* src);
 
 #endif
