@@ -9,39 +9,79 @@
 
 #define TOPIC_BUFFER_SIZE 64
 #define PAYLOAD_BUFFER_SIZE 128
-#define RECONNECT_DELAY 273
+#define RECONNECT_DELAY 372
 
 static Telemetry* _telemetry;
 
 static WiFiClientSecure* client = nullptr;
 static MQTTClient* mqttClient = nullptr;
+static char* caCert = nullptr;
+static char* cert = nullptr;
+static char* privKey = nullptr;
 
 static bool isMqttRunning = false;
 
-template<typename L> void loadFromFile(const char* fname, L&& load) {
+char* loadFromFile(const char* fname) {
+  char* buf = nullptr;
   if (SPIFFS.exists(fname)) {
     File f = SPIFFS.open(fname);
-    bool rc = load(f, f.size());
-    LOGD("Loaded: %d (name %s, size %d)", rc, f.name(), f.size());
+    const size_t size = f.size();
+    buf = new char[size+1];
+    if (size == f.readBytes(buf, size)) {
+      buf[size] = '\0';
+    } else {
+      delete[] buf;
+      buf = nullptr;
+    }
+    LOGD("Loaded file: %d (name %s, size %d)", buf != nullptr, f.name(), size);
     f.close();
   }
+  return buf;
 }
 
-void loadCertificates(WiFiClientSecure* client) {
+void loadCertificates(WiFiClientSecure*const client) {
   LOGMEM("pre-MQTT-loadCertificates");
   SPIFFS.begin();
-  loadFromFile("/ca.cert.pem", [client](Stream& stream, size_t size){return client->loadCACert(stream, size);});
-  loadFromFile("/client.cert.pem", [client](Stream& stream, size_t size){return client->loadCertificate(stream, size);});
-  loadFromFile("/private.key.pem", [client](Stream& stream, size_t size){return client->loadPrivateKey(stream, size);});
+  if (!caCert) {
+    caCert = loadFromFile("/ca.cert.pem");
+    client->setCACert(caCert);
+  }
+  if (!cert) {
+    cert = loadFromFile("/client.cert.pem");
+    client->setCertificate(cert);
+  }
+  if (!privKey) {
+    privKey = loadFromFile("/private.key.pem");
+    client->setPrivateKey(privKey);
+  }
   SPIFFS.end();
   LOGMEM("post-MQTT-loadCertificates");
+}
+
+void freeCertificates(WiFiClientSecure*const client) {
+  LOGMEM("pre-MQTT-freeCertificates");
+  if (caCert) {
+    client->setCACert(nullptr);
+    delete[] caCert;
+    caCert = nullptr;
+  }
+  if (cert) {
+    client->setCertificate(nullptr);
+    delete[] cert;
+    cert = nullptr;
+  }
+  if (privKey) {
+    client->setPrivateKey(nullptr);
+    delete[] privKey;
+    privKey = nullptr;
+  }
+  LOGMEM("post-MQTT-freeCertificates");
 }
 
 void mqttBegin(Telemetry* telemetry) {
   if (!isMqttRunning && strlen(telemetry->config.mqtt.broker) > 0) {
     _telemetry = telemetry;
     client = new WiFiClientSecure();
-    loadCertificates(client);
     mqttClient = new MQTTClient(256);
     mqttClient->begin(_telemetry->config.mqtt.broker, _telemetry->config.mqtt.port, *client);
     isMqttRunning = true;
@@ -51,8 +91,14 @@ void mqttBegin(Telemetry* telemetry) {
 void mqttStop() {
   if (isMqttRunning) {
     mqttClient->disconnect();
-    delete mqttClient;
-    delete client;
+    if (mqttClient) {
+      delete mqttClient;
+      mqttClient = nullptr;
+    }
+    if (client) {
+      delete client;
+      client = nullptr;
+    }
     _telemetry = nullptr;
     isMqttRunning = false;
   }
@@ -71,10 +117,12 @@ bool ensureConnected() {
   if (!isConn && (ms - lastAttempt) > RECONNECT_DELAY) {
     LOGMEM("pre-MQTT-ensureConnected");
     LOGD("WiFi station status: %d", WiFi.status());
+    loadCertificates(client);
     isConn = mqttClient->connect(_telemetry->config.wifi.client.hostname);
     LOGD("MQTT connection: %d", mqttClient->returnCode());
     if (isConn) {
       lastAttempt = 0;
+      freeCertificates(client);
     } else {
       lastAttempt = ms;
       LOGE("MQTT connection error: %d", mqttClient->lastError());
