@@ -38,7 +38,6 @@ void webBegin(Telemetry* telemetry) {
   }
   if (!isWebRunning) {
     _telemetry = telemetry;
-    SPIFFS.begin();
     webServer->begin();
     isWebRunning = true;
   }
@@ -48,7 +47,6 @@ void webBegin(Telemetry* telemetry) {
 void webStop() {
   if (isWebRunning) {
     webServer->end();
-    SPIFFS.end();
     _telemetry = nullptr;
     isWebRunning = false;
   }
@@ -67,10 +65,13 @@ void webStop() {
 }
 
 void wsEventHandler(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len) {
+  bool* haveSentFull;
   switch (type) {
     case WS_EVT_CONNECT:
       LOGD("WS connected");
-      client->_tempObject = new bool[MAX_SENSORS];
+      haveSentFull = new bool[MAX_SENSORS];
+      memset(haveSentFull, 0, MAX_SENSORS);
+      client->_tempObject = haveSentFull;
       break;
     case WS_EVT_DISCONNECT:
       LOGD("WS disconnected");

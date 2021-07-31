@@ -41,7 +41,6 @@ char* loadFromFile(const char* fname) {
 
 void loadCertificates(WiFiClientSecure*const client) {
   LOGMEM("pre-MQTT-loadCertificates");
-  SPIFFS.begin();
   if (!caCert) {
     caCert = loadFromFile("/ca.cert.pem");
     client->setCACert(caCert);
@@ -54,7 +53,6 @@ void loadCertificates(WiFiClientSecure*const client) {
     privKey = loadFromFile("/private.key.pem");
     client->setPrivateKey(privKey);
   }
-  SPIFFS.end();
   LOGMEM("post-MQTT-loadCertificates");
 }
 
@@ -153,50 +151,54 @@ bool mqttPublishSensor(const Sensor& sensor) {
 
       const char *name;
       const char *unit;
-      int8_t pos;
+      int8_t slot;
       if (sensor.info) {
         name = sensor.info->name;
         unit = sensor.info->getUnitName();
         if (sensor.info->lastId > sensor.info->firstId) {
-          pos = sensor.sensorId - sensor.info->firstId + 1;
+          slot = sensor.sensorId - sensor.info->firstId + 1;
         } else {
-          pos = -1;
+          slot = -1;
         }
       } else {
         // unknown sensor
         name = UNKNOWN_SENSOR;
         unit = "";
-        pos = -1;
+        slot = -1;
       }
 
       char* topicBuf = new char[TOPIC_BUFFER_SIZE];
       len = sprintf(topicBuf, "%s/%02X/%s", _telemetry->config.mqtt.topic, sensor.physicalId, name);
-      if (len > 0 && len < TOPIC_BUFFER_SIZE && pos > 0) {
-        int posLen = sprintf(topicBuf+len, "/%d", pos);
-        len = (posLen >=0 ? len+posLen : -1);
-      }
-      if (len > 0 && len < TOPIC_BUFFER_SIZE && sensor.info && sensor.info->subCount > 1) {
-        int subLen;
-        if (pos > 0) {
-          subLen = sprintf(topicBuf+len, "/%d", sensor.info->subId+1);
-        } else {
-          subLen = sprintf(topicBuf+len, "//%d", sensor.info->subId+1);
+      if (sensor.info->lastId > sensor.info->firstId) {
+        // Append slot and subId if sensor name is not unique
+        if (len > 0 && len < TOPIC_BUFFER_SIZE && slot > 0) {
+          int slotLen = sprintf(topicBuf+len, "/%d", slot);
+          len = (slotLen >=0 ? len+slotLen : -1);
         }
-        len = (subLen >=0 ? len+subLen : -1);
-      }
-      if (len < 0) {
-        LOGE("sprintf error: %d", len);
-        delete[] topicBuf;
-        delete[] payload;
-        return false;
-      } else if (len > TOPIC_BUFFER_SIZE-1) {
-        LOGE("Topic buffer size exceeded! (%d)", len);
-        delete[] topicBuf;
-        delete[] payload;
-        return false;
+        if (len > 0 && len < TOPIC_BUFFER_SIZE && sensor.info && sensor.info->subCount > 1) {
+          int subLen;
+          if (slot > 0) {
+            subLen = sprintf(topicBuf+len, "/%d", sensor.info->subId+1);
+          } else {
+            subLen = sprintf(topicBuf+len, "//%d", sensor.info->subId+1);
+          }
+          len = (subLen >=0 ? len+subLen : -1);
+        }
+        if (len < 0) {
+          LOGE("sprintf error: %d", len);
+          delete[] topicBuf;
+          delete[] payload;
+          return false;
+        } else if (len > TOPIC_BUFFER_SIZE-1) {
+          LOGE("Topic buffer size exceeded! (%d)", len);
+          delete[] topicBuf;
+          delete[] payload;
+          return false;
+        }
       }
       // remove any leading '/'
       char* topic = (topicBuf[0] == '/') ? topicBuf+1 : topicBuf;
+
       if (strlen(unit) > 0) {
         len = sprints(payload+payloadPos, ", \"unit\": \"");
         payloadPos += len;

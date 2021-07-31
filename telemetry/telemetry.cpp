@@ -1,14 +1,28 @@
 // No OTA (2MB APP/2MB SPIFFS)
 
-#define TRANSPORT_BT_ENABLED
+#define USE_BLE_SERVER
+#define USE_BLE_CLIENT
+//#define USE_BT_SPP
+#define USE_NIMBLE
+
+#ifdef USE_NIMBLE
+#undef USE_BT_SPP
+#endif
 
 #include <Arduino.h>
 #include <HardwareSerial.h>
-#ifdef TRANSPORT_BT_ENABLED
+#include <SPIFFS.h>
+#ifdef USE_BT_SPP
 #include <BluetoothSerial.h>
 #endif
+#if defined(USE_BLE_SERVER) || defined(USE_BLE_CLIENT)
+#ifdef USE_NIMBLE
+#include <NimBLEDevice.h>
+#else
 #include <BLEDevice.h>
 #include <BLE2902.h>
+#endif
+#endif
 #include <WiFi.h>
 #include <Preferences.h>
 #include "protocol.h"
@@ -24,8 +38,10 @@
 #define SERIALIZATION_BUFFER_SIZE (1+2*SPORT_DATA_PACKET_LEN+1) // allow for everything to be byte-stuffed
 #define SERVICE_UUID        "0000FFF0-0000-1000-8000-00805F9B34FB"
 #define CHARACTERISTIC_UUID "0000FFF6-0000-1000-8000-00805F9B34FB"
-#define BLE_BUFFER_SIZE (2*SERIALIZED_PACKET_SIZE)
+#define MAX_MTU_SIZE 65
+#define BLE_BUFFER_SIZE MAX_MTU_SIZE-MTU_OVERHEAD
 #define MTU_OVERHEAD 3
+#define BLE_RECONNECT_DELAY 2000 // must be greater than connect timeout
 #define PHYSICAL_SENSOR_ID 0x19
 #define TOUCH_THRESHOLD 35
 #define MIN_TOUCH_TIME 307
@@ -44,16 +60,20 @@ static const IPAddress localHost(192, 168, 31, 1);
 static const IPAddress gateway(192, 168, 31, 1);
 static const IPAddress subnet(255, 255, 255, 0);
 
+#ifdef USE_BLE_CLIENT
 static BLEClient* bleClient;
+#endif
 
-#ifdef TRANSPORT_BT_ENABLED
+#ifdef USE_BT_SPP
 static BluetoothSerial* btSerial;
 #endif
 static bool btCongested = false;
+#ifdef USE_BLE_SERVER
 static BLEServer* bleServer;
 static BLECharacteristic* bleChar;
 static bool bleIsAdvertising = false;
 static int bleDataSize = 23 - MTU_OVERHEAD;
+#endif
 
 static uint32_t serialPacketCount = 0;
 static uint32_t webMsgCount = 0;
@@ -62,6 +82,7 @@ static const uint8_t touchPins[] = {WIFI_STA_TOUCH_PIN, BLE_ADVERT_TOUCH_PIN, WI
 static Telemetry telemetry;
 #define INCOMING_CAPACITY 20
 static uint8_t incoming[INCOMING_CAPACITY];
+static SerialSource incomingSource;
 static int incomingReadPos = 0;
 static int incomingWritePos = 0;
 
@@ -74,7 +95,7 @@ static bool stopWiFi();
 static void sendInternalSensors(bool includeStart);
 static void loadPreferenceString(Preferences& prefs, const char* key, char* value, int maxSize, const char* defaultValue);
 
-#ifdef TRANSPORT_BT_ENABLED
+#ifdef USE_BT_SPP
 void btTelemetryCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
   switch(event) {
     case ESP_SPP_SRV_OPEN_EVT:
@@ -94,6 +115,21 @@ void btTelemetryCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
 }
 #endif
 
+#ifdef USE_BLE_SERVER
+#ifdef USE_NIMBLE
+int bleTelemetryCallback(struct ble_gap_event* event, void* param) {
+  switch(event->type) {
+    case BLE_GAP_EVENT_MTU:
+      LOGD("BLE MTU set to %d", event->mtu.value);
+      // ensure we don't exceed the buffer size
+      bleDataSize = min(event->mtu.value - MTU_OVERHEAD, BLE_BUFFER_SIZE);
+      break;
+    default:
+      ;
+  }
+  return 0;
+}
+#else
 void bleTelemetryCallback(esp_gatts_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gatts_cb_param_t* param) {
   switch(event) {
     case ESP_GATTS_MTU_EVT:
@@ -105,37 +141,62 @@ void bleTelemetryCallback(esp_gatts_cb_event_t event, esp_gatt_if_t gattc_if, es
       ;
   }
 }
+#endif
+#endif
 
+#ifdef USE_BLE_CLIENT
 void bleSourceCallback(BLERemoteCharacteristic* remoteChar, uint8_t* data, size_t len, bool isNotify) {
-  write(data, len, MODE_PASS_THRU);
-  for (int i=0; i<len; i++) {
-    if (protocolOnReceive(data[i]) > 0) {
-      serialPacketCount++;
-    }
+  if (INCOMING_CAPACITY - incomingWritePos > len) {
+    memcpy(incoming+incomingWritePos, data, len);
+    incomingWritePos += len;
+    incomingSource = SOURCE_BLE;
   }
 }
 
-void bleSourceConnect() {
+bool bleSourceConnect() {
+  bool subscribed = false;
   LOGD("Trying to connect to BLE device %s", telemetry.config.input.btAddress);
-  if (bleClient->connect(BLEAddress(telemetry.config.input.btAddress))) {
+#ifdef USE_NIMBLE
+  bool rc = bleClient->connect(BLEAddress(telemetry.config.input.btAddress));
+#else
+  bool rc = bleClient->connect(BLEAddress(telemetry.config.input.btAddress));
+#endif
+  if (rc) {
     LOGD("BLE client connected to %s", telemetry.config.input.btAddress);
+    bleClient->getServices(true);
     BLERemoteService* remoteService = bleClient->getService(SERVICE_UUID);
     if (remoteService) {
+      remoteService->getCharacteristics(true);
       BLERemoteCharacteristic* remoteChar = remoteService->getCharacteristic(CHARACTERISTIC_UUID);
-      if (remoteChar->canNotify()) {
-        remoteChar->registerForNotify(bleSourceCallback);
-        LOGD("Notifications enabled for BLE characteristic %s", CHARACTERISTIC_UUID);
+      if (remoteChar && remoteChar->canNotify()) {
+#ifdef USE_NIMBLE
+          if (remoteChar->subscribe(true, bleSourceCallback)) {
+              LOGD("Subscribed to notifications for BLE characteristic %s", CHARACTERISTIC_UUID);
+              subscribed = true;
+          } else {
+              LOGD("Failed to subscribe to notifications for BLE characteristic %s", CHARACTERISTIC_UUID);
+              bleClient->disconnect();
+          }
+#else
+          remoteChar->registerForNotify(bleSourceCallback);
+          LOGD("Notifications enabled for BLE characteristic %s", CHARACTERISTIC_UUID);
+          subscribed = true;
+#endif
       } else {
-        LOGE("BLE characteristic %s does not support notify", CHARACTERISTIC_UUID);
+        LOGE("BLE characteristic %s not found or does not support notify", CHARACTERISTIC_UUID);
+        bleClient->disconnect();
       }
     } else {
       LOGE("BLE service %s not found", SERVICE_UUID);
+      bleClient->disconnect();
     }
   } else {
     LOGE("Failed to connect to BLE device %s", telemetry.config.input.btAddress);
   }
   LOGMEM("post-bleSourceConnect");
+  return subscribed;
 }
+#endif
 
 void setup() {
 #ifdef DEBUG
@@ -148,15 +209,16 @@ void setup() {
   LOGMEM("post-config");
 
 // Bluetooth startup sequence is critical!
+#if defined(USE_BLE_SERVER) || defined(USE_BLE_CLIENT)
   if (telemetry.config.ble.mode != MODE_DISABLED || telemetry.config.input.source == SOURCE_BLE) {
     BLEDevice::init(telemetry.config.ble.name);
-    BLEDevice::setMTU(BLE_BUFFER_SIZE+MTU_OVERHEAD); // max 517
     BLEDevice::setPower(ESP_PWR_LVL_P7);
-    BLEDevice::setCustomGattsHandler(bleTelemetryCallback);
     LOGD("BLE local address: %s", BLEDevice::getAddress().toString().c_str());
     LOGMEM("post-BLEDevice");
   }
-#ifdef TRANSPORT_BT_ENABLED
+#endif
+
+#ifdef USE_BT_SPP
   if (telemetry.config.bt.mode != MODE_DISABLED) {
     btSerial = new BluetoothSerial();
     btSerial->register_callback(btTelemetryCallback);
@@ -165,25 +227,61 @@ void setup() {
     }
   }
 #endif
-  if (telemetry.config.input.source == SOURCE_BLE) {
-    bleClient = BLEDevice::createClient();
-    bleSourceConnect();
-  }
+
+#ifdef USE_BLE_SERVER
   if (telemetry.config.ble.mode != MODE_DISABLED) {
+    // server MTU
+    BLEDevice::setMTU(MAX_MTU_SIZE); // max 517
+#ifdef USE_NIMBLE
+    BLEDevice::setCustomGapHandler(bleTelemetryCallback);
+#else
+    BLEDevice::setCustomGattsHandler(bleTelemetryCallback);
+#endif
     bleServer = BLEDevice::createServer();
+    if (!bleServer) {
+      LOGE("Failed to create BLE server");
+    }
     BLEService* bleService = bleServer->createService(SERVICE_UUID);
     bleChar = bleService->createCharacteristic(CHARACTERISTIC_UUID,
-      BLECharacteristic::PROPERTY_NOTIFY);
+#ifdef USE_NIMBLE
+      NIMBLE_PROPERTY::NOTIFY
+#else
+      BLECharacteristic::PROPERTY_NOTIFY
+#endif
+    );
+#ifndef USE_NIMBLE
     BLE2902* ble2902Desc = new BLE2902();
     ble2902Desc->setNotifications(true);
     bleChar->addDescriptor(ble2902Desc);
+#endif
     bleService->start();
     BLEAdvertising* bleAdvertising = BLEDevice::getAdvertising();
     bleAdvertising->addServiceUUID(SERVICE_UUID);
     bleAdvertising->setScanResponse(true);
+  }
+#endif
+
+#ifdef USE_BLE_CLIENT
+  if (telemetry.config.input.source == SOURCE_BLE && strlen(telemetry.config.input.btAddress) > 0) {
+    bleClient = BLEDevice::createClient();
+    if (bleClient) {
+#ifdef USE_NIMBLE
+      bleClient->setConnectTimeout(1);
+#endif
+    } else {
+      LOGE("Failed to create BLE client");
+    }
+  }
+#endif
+
+  // autostart
+
+  SPIFFS.begin();
+#ifdef USE_BLE_SERVER
+  if (telemetry.config.ble.mode != MODE_DISABLED) {
     BLEDevice::startAdvertising();
   }
-
+#endif
   if ((telemetry.config.wifi.mode & WIFI_AP)) {
     startWiFiAP();
   }
@@ -218,7 +316,7 @@ void write(uint8_t* data, int len, SerialMode mode) {
     Serial.write(data, len);
   }
 #endif
-#ifdef TRANSPORT_BT_ENABLED
+#ifdef USE_BT_SPP
   if (telemetry.config.bt.mode == mode && !btCongested) {
     if (mode == MODE_FILTER) {
       // skip initial START_STOP
@@ -228,6 +326,7 @@ void write(uint8_t* data, int len, SerialMode mode) {
     btSerial->write(data, len);
   }
 #endif
+#ifdef USE_BLE_SERVER
   if (telemetry.config.ble.mode == mode) {
     static uint8_t bleBuffer[BLE_BUFFER_SIZE];
     static int bleWritePos = 0;
@@ -262,6 +361,7 @@ void write(uint8_t* data, int len, SerialMode mode) {
       }
     }
   }
+#endif
 }
 
 void loop() {
@@ -269,13 +369,14 @@ void loop() {
   const uint32_t ms = millis();
 
   if (incomingReadPos < incomingWritePos) {
-    uint8_t* nextByte = incoming+incomingReadPos++;
-    write(nextByte, 1, MODE_PASS_THRU);
-    protocolOnReceive(*nextByte);
-    if (incomingReadPos == incomingWritePos) {
-      incomingReadPos = 0;
-      incomingWritePos = 0;
+    write(incoming+incomingReadPos, incomingWritePos - incomingReadPos, MODE_PASS_THRU);
+    while (incomingReadPos < incomingWritePos) {
+      if (protocolOnReceive(incoming[incomingReadPos++]) > 0 && incomingSource > 0) {
+        serialPacketCount++;
+      }
     }
+    incomingReadPos = 0;
+    incomingWritePos = 0;
   } else if (telemetry.config.input.source == SOURCE_UART) {
     // rx is floating by default so when nothing is connected we may read noise
     if (Serial2.available()) {
@@ -293,6 +394,15 @@ void loop() {
       }
       serialPacketCount = 0;
       lastSerialCheckpoint = ms;
+    }
+  } else if (telemetry.config.input.source == SOURCE_BLE) {
+    static uint32_t lastBleConnectAttempt = 0;
+    if (bleClient && !bleClient->isConnected() && (ms - lastBleConnectAttempt) > BLE_RECONNECT_DELAY) {
+      if (bleSourceConnect()) {
+        lastBleConnectAttempt = 0;
+      } else {
+        lastBleConnectAttempt = ms;
+      }
     }
   }
 
@@ -317,11 +427,13 @@ void loop() {
   } else {
     digitalWrite(WEB_LED_PIN, LOW);
   }
+#ifdef USE_BLE_SERVER
   if (bleIsAdvertising) {
     digitalWrite(BLE_ADVERT_LED_PIN, ledCounter > 300 ? HIGH : LOW);
   } else {
     digitalWrite(BLE_ADVERT_LED_PIN, LOW);
   }
+#endif
   switch (WiFi.getMode()) {
     case WIFI_AP:
       digitalWrite(WIFI_AP_LED_PIN, ledCounter < 100 ? HIGH : LOW);
@@ -389,6 +501,7 @@ void checkButtons(const uint32_t ms) {
 bool handleButton(uint8_t buttonId) {
   LOGD("handleButton(%d)", buttonId);
   switch (buttonId) {
+#ifdef USE_BLE_SERVER
     case BLE_ADVERT_TOUCH_PIN:
       if (telemetry.config.ble.mode != MODE_DISABLED) {
         if (!bleIsAdvertising) {
@@ -403,6 +516,7 @@ bool handleButton(uint8_t buttonId) {
         return true;
       }
       break;
+#endif
     case WIFI_AP_TOUCH_PIN:
       if (WiFi.getMode() != WIFI_AP && WiFi.getMode() != WIFI_AP_STA) {
         return startWiFiAP();
@@ -427,7 +541,7 @@ bool startWiFiAP() {
   if (WiFi.softAP(telemetry.config.wifi.ap.ssid, telemetry.config.wifi.ap.password)) {
     WiFi.softAPConfig(localHost, gateway, subnet);
     webBegin(&telemetry);
-    LOGD("Started WiFi AP: %d", WiFi.getMode());
+    LOGD("Started WiFi AP: mode %d", WiFi.getMode());
     return true;
   } else {
     LOGE("Failed to start WiFi AP");
@@ -443,7 +557,7 @@ bool startWiFiSTA() {
   if (status != WL_CONNECT_FAILED) {
     mqttBegin(&telemetry);
     webBegin(&telemetry);
-    LOGD("Started WiFi station: %d (%d)", WiFi.getMode(), status);
+    LOGD("Started WiFi station: mode %d (status %d)", WiFi.getMode(), status);
     return true;
   } else {
     LOGE("Failed to start WiFi station");
@@ -456,7 +570,7 @@ bool stopWiFi() {
   mqttStop();
   WiFi.disconnect(true);
   WiFi.softAPdisconnect(true);
-  LOGD("Stopped WiFi: %d", WiFi.getMode());
+  LOGD("Stopped WiFi: mode %d", WiFi.getMode());
   return true;
 }
 
@@ -475,6 +589,7 @@ void sendInternalSensors(bool includeStart) {
       if (incomingWritePos > INCOMING_CAPACITY) {
         LOGE("Incoming buffer exceeded! (%d)", incomingWritePos);
       }
+      incomingSource = SOURCE_NONE;
       lastSent = millis();
     }
   }
@@ -582,14 +697,14 @@ void Sensor::setGpsLatitude(uint32_t sensorData) {
 }
 
 void Sensor::setNumericValue(uint32_t sensorData) {
-  int32_t v = sensorData;
+  const int32_t v = sensorData;
   if (info == nullptr || info->precision <= 1) {
     if (value.numeric != v) {
       lastChangedValue.numeric = v;
       hasChangedSinceProcessed = true;
     }
   } else if(info->precision > 1) {
-    uint32_t diff = abs(v - lastChangedValue.numeric);
+    int32_t diff = abs(v - lastChangedValue.numeric);
     for (int i=0; i<info->precision; i++) {
       diff /= 10;
     }

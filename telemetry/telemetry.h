@@ -8,7 +8,7 @@
 #define strncpy_s(dst, src, n) strncpy(dst, src, n);dst[n-1] = '\0';
 
 enum SerialSource {
-  SOURCE_UART, SOURCE_BLE
+  SOURCE_NONE, SOURCE_UART, SOURCE_BLE
 };
 
 enum TelemetryProtocol {
