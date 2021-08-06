@@ -226,10 +226,16 @@ void sendSettings(AsyncWebServerRequest* request) {
       } else if (name == "bt_source") {
         strncpy_s(_telemetry->config.input.btAddress, value.c_str(), BD_ADDR_SIZE);
       } else if (name == "protocol") {
+        TelemetryProtocol newProtocol;
         if (value == "crsf") {
-          _telemetry->config.input.protocol = PROTOCOL_CRSF;
+          newProtocol = PROTOCOL_CRSF;
         } else {
-          _telemetry->config.input.protocol = PROTOCOL_SMART_PORT;
+          newProtocol = PROTOCOL_SMART_PORT;
+        }
+        if (newProtocol != _telemetry->config.input.protocol) {
+          protocolEnd();
+          _telemetry->config.input.protocol = newProtocol;
+          protocolBegin(_telemetry);
         }
       } else if (name == "usb_mode") {
         if (value == "filter") {

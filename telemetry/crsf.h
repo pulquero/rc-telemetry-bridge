@@ -2,7 +2,8 @@
 
 #define CRSF_BUFFER_SIZE 64
 
-void crsfInit();
+void crsfBegin();
+void crsfEnd();
 int crsfOnReceive(uint8_t b);
 
 class CrsfPacket final {

@@ -13,11 +13,18 @@ static uint32_t read32(uint8_t*const data);
 
 static SPortPacket* sportPacket;
 
-void sportInit(bool ble) {
+void sportBegin(bool ble) {
   if (ble) {
     sportPacket = new BleSPortPacket();
   } else {
     sportPacket = new SPortPacket();
+  }
+}
+
+void sportEnd() {
+  if (sportPacket) {
+    delete sportPacket;
+    sportPacket = nullptr;
   }
 }
 

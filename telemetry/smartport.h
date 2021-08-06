@@ -8,7 +8,8 @@
 #define SPORT_DATA_PACKET_LEN 9
 #define SPORT_BUFFER_SIZE SPORT_DATA_PACKET_LEN
 
-void sportInit(bool ble);
+void sportBegin(bool ble);
+void sportEnd();
 int sportOnReceive(uint8_t b);
 int sportWriteSensorPacket(uint8_t*const out, uint8_t physicalId, uint16_t sensorId, uint32_t sensorData, bool includeStart);
 

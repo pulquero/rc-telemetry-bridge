@@ -45,8 +45,15 @@ static const uint8_t crcTable[] = {
 
 static CrsfPacket* crsfPacket;
 
-void crsfInit() {
+void crsfBegin() {
   crsfPacket = new CrsfPacket();
+}
+
+void crsfEnd() {
+  if (crsfPacket) {
+    delete crsfPacket;
+    crsfPacket = nullptr;
+  }
 }
 
 int crsfOnReceive(uint8_t b) {

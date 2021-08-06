@@ -10,13 +10,21 @@ static Telemetry* _telemetry;
 void protocolBegin(Telemetry* telemetry) {
   _telemetry = telemetry;
   if (telemetry->config.input.protocol == PROTOCOL_CRSF) {
-    crsfInit();
+    crsfBegin();
   } else {
     if (telemetry->config.input.source == SOURCE_BLE) {
-      sportInit(true);
+      sportBegin(true);
     } else {
-      sportInit(false);
+      sportBegin(false);
     }
+  }
+}
+
+void protocolEnd() {
+  if (_telemetry->config.input.protocol == PROTOCOL_CRSF) {
+    crsfEnd();
+  } else {
+    sportEnd();
   }
 }
 

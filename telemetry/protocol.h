@@ -1,6 +1,9 @@
 #include "telemetry.h"
 
 void protocolBegin(Telemetry* telemetry);
+
+void protocolEnd();
+
 /**
  * Returns the packet size when a complete packet has been received,
  * else minus the size currently received.
