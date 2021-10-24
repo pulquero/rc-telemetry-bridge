@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta charset="UTF-8"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css"
+   integrity="sha512-xwE/Az9zrjBIphAcBb3F6JVqxf46+CDLwfLMHloNu6KEQCAWi6HcDUbeOfBIptF7tcCzusKFjFw2yuvEpDL9wQ=="
+   crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"
+   integrity="sha512-gZwIG9x3wUXg2hdXF6+rVkLF/0Vi9U8D2Ntg4Ga5I5BZpVkVxlJWbSQtXPSiUTtC0TjtGOmxa1AJPuV0CPthew=="
+   crossorigin=""></script>
+<script src="https://sdk.amazonaws.com/js/aws-sdk-2.685.0.min.js"></script>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="sigv4.js"></script>
+<script src="util.js"></script>
+<script src="config.js"></script>
+<script type="text/javascript">
+authToken = null;
+if (window.location.hash.length > 0) {
+	let params = new URLSearchParams(window.location.hash.substring(1));
+	authToken = params.get('id_token');
+}
+if (!authToken) {
+	window.location = config.loginUrl+'&response_type=token&redirect_uri='+window.location;
+}
+AWS.config.region = config.region;
+AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+	IdentityPoolId: config.identityPoolId,
+	Logins: {
+		[config.login]: authToken
+	}
+});
+s3 = authToken ? new AWS.S3() : null;
+</script>
+<style>
+tbody td:nth-child(2) { text-align: right; }
+tbody td:nth-child(3) { text-align: right; }
+tbody td:nth-child(4) { text-align: right; }
+#map { height: 500px; }
+.altitude-marker {
+	font-size: 9px;
+	border: 1px solid #777;
+	border-radius: 10px;
+	text-align: center;
+	color: #000;
+	background: #fff;
+}
+</style>
+<title>Flight Recorder</title>
+</head>
+
+<body>
+<h1>Flight Recorder</h1>
+<div>
+<select id="keySelect" name="key">
+<option value=""/>
+</select>
+</div>
+<script type="text/javascript">
+if (s3) {
+	s3.listObjectsV2({
+		Bucket: config.bucket,
+		Prefix: 'log-'
+	}, function(err, data) {
+		if (err) {
+			if (window.location.hash.length > 0) {
+				// drop token - re-login
+				window.location.hash = '';
+				window.location.reload();
+			} else {
+				console.log(err);
+			}
+		}
+		if (data) {
+		    const sel = document.getElementById('keySelect');
+			for (const obj of data.Contents) {
+				const opt = document.createElement('option');
+				opt.value = obj.Key;
+				opt.text = obj.Key;
+				sel.add(opt);
+			}
+		}
+	});
+}
+</script>
+<br/>
+<table>
+<thead><tr><th>Name</th><th>Value</th><th>Min</th><th>Max</th></tr></thead>
+<tbody id="sensors"></tbody>
+</table>
+<div id="map"></div>
+<br/>
+<div>
+<input id="play" type="button" value="Play" disabled="true"/>
+<input id="clear" type="button" value="Clear" disabled="true"/>
+<input id="live" type="button" value="Live" disabled="true"/>
+</div>
+<script type="text/javascript">
+map = L.map('map').setView([0, 0], 3);
+attribution = '';
+const osmAttribution = 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>';
+if (config.tileUrl.indexOf('.mapbox.com') >= 0) {
+	attribution = osmAttribution + ', Imagery © <a href="https://www.mapbox.com/">Mapbox</a>';
+} else if (config.tileUrl.indexOf('.thunderforest.com') >= 0) {
+	attribution = osmAttribution + ', Imagery © <a href="https://www.thunderforest.com/">Thunderforest</a>';
+}
+L.tileLayer(config.tileUrl, {
+	attribution: attribution,
+	maxZoom: 18,
+	apikey: config.tileApiKey
+}).addTo(map);
+marker = null
+map.on('locationfound', function(e) {
+	if (marker == null) {
+		marker = L.circle(e.latlng, {color: 'blue', radius: e.accuracy}).addTo(map);
+	} else {
+		marker.setLatLng(e.latlng);
+		marker.setRadius(e.accuracy);
+	}
+});
+map.locate({watch: true, enableHighAccuracy: true});
+path = L.polyline([], {color: 'red'}).addTo(map);
+altMarkers = [];
+flyToLast = function() {
+	if (!path.isEmpty()) {
+		const lls = path.getLatLngs();
+		const ll = lls[lls.length-1];
+		map.flyTo(ll, 17, {animate: true});
+	}
+};
+</script>
+<script type="text/javascript">
+sensorLog = [];
+armed = false;
+gpsFix = false;
+loadSensorLog = function(octetData) {
+	const jsonl = new TextDecoder('UTF-8').decode(octetData).split('\n');
+	for (const l of jsonl) {
+		if (l.length > 0) {
+			try {
+				const sensor = JSON.parse(l);
+
+				// backwards compatibility
+				if ('Sensor' in sensor) {
+					sensor.name = sensor.Sensor;
+					delete sensor.Sensor;
+				}
+				if ('Timestamp' in sensor) {
+					sensor.timestamp = sensor.Timestamp;
+					delete sensor.Timestamp;
+				}
+
+				sensorLog.push(sensor);
+			} catch(ex) {
+				console.log(ex+"\n'"+l+"'");
+			}
+		}
+	}
+	sensorLog.sort(function(a,b) {
+		return a.timestamp - b.timestamp;
+	});
+};
+
+htmlSensorValue = function(value, unit) {
+	if (unit === 'rad') {
+		return (value*180.0/Math.PI).toFixed(1) + '°';
+	} else {
+		let s = value.toString();
+		if (unit) {
+			s += unit;
+		}
+		return s;
+	}
+};
+
+updateTable = function(sensor) {
+	const id = sensor.name;
+	let row = document.getElementById(id);
+	sensorValue = 'value' in sensor ? sensor.value : '';
+	sensorUnit = 'unit' in sensor ? sensor.unit : '';
+	if (!row) {
+		const table = document.getElementById('sensors');
+		let idx = -1;
+		for (let i=0; i<table.rows.length; i++) {
+			if (id < table.rows.item(i).id) {
+				idx = i;
+				break;
+			}
+		}
+		row = table.insertRow(idx);
+		row.id = id;
+		row.dataset.name = sensor.name;
+		row.dataset.unit = sensorUnit;
+		row.dataset.value = sensorValue;
+		row.insertCell(-1).innerHTML = sensor.name;
+		row.insertCell(-1).innerHTML = htmlSensorValue(sensorValue, sensorUnit);
+		row.insertCell(-1)
+		row.insertCell(-1)
+	} else {
+		row.dataset.value = sensorValue;
+		const htmlValue = htmlSensorValue(sensorValue, row.dataset.unit);
+		row.cells.item(1).innerHTML = htmlValue;
+		if (typeof sensorValue === 'number') {
+			if (!('minValue' in row.dataset) || sensorValue < row.dataset.minValue) {
+				row.cells.item(2).innerHTML = htmlValue;
+				row.dataset.minValue = sensorValue;
+			}
+			if (!('maxValue' in row.dataset) || sensorValue > row.dataset.maxValue) {
+				row.cells.item(3).innerHTML = htmlValue;
+				row.dataset.maxValue = sensorValue;
+			}
+		}
+	}
+};
+clearTableValues = function () {
+	const table = document.getElementById('sensors');
+	for (const row of table.rows) {
+		row.cells.item(1).innerHTML = '';
+		row.cells.item(2).innerHTML = '';
+		row.cells.item(3).innerHTML = '';
+		delete row.dataset.value;
+		delete row.dataset.minValue;
+		delete row.dataset.maxValue;
+	}
+};
+clearTable = function() {
+	const table = document.getElementById('sensors');
+	for (let i=table.rows.length-1; i>=0; i--) {
+		table.deleteRow(i);
+	}
+};
+
+updateMap = function(idx, sensor) {
+	const name = sensor.name;
+	if (name.match(/^.+\/Tmp1$/)) {
+		// smartport
+		armed = (sensor.value.indexOf('DISARMED') === -1);
+	} else if (name.match(/^.+\/Tmp2$/)) {
+		// smartport
+		gpsFix = (sensor.value[2] !== 'WAIT');
+	} else if (name.match(/^.+\/FM$/)) {
+		// crossfire
+		armed = (sensor.value !== 'OK') && (sensor.value !== 'WAIT') && (sensor.value !== '!ERR');
+		if (sensor.value === 'OK') {
+			gpsFix = true;
+		}
+	} else if (armed && gpsFix && name.match(/^.+\/GPS(\/.+)?$/)) {
+		const lng = sensor.value[0];
+		const lat = sensor.value[1];
+		if (lng >= -180.0 && lng <= 180.0 && lng != 0.0 && lat >= -90.0 && lat <= 90.0 && lat != 0.0) {
+			const current = addToPath(lat, lng, path);
+			if (current) {
+				current.sensorIdx = idx;
+			}
+		} else {
+			console.log('Invalid lat-lng: '+sensor.value);
+		}
+	} else if (armed && gpsFix && name.match(/^.+\/Alt(\/.+)?$/)) {
+		const alt = sensor.value;
+		if (alt > -100000.0 && alt < 100000.0) {
+			addAltitudeMarker(alt, path, altMarkers);
+		} else {
+			console.log('Invalid altitude: '+alt);
+		}
+	}
+};
+clearMap = function() {
+	path.setLatLngs([]);
+	for (const altMarker of altMarkers) {
+		altMarker.removeFrom(map);
+	}
+	altMarkers = [];
+};
+
+resetUI = function() {
+	clearTable();
+	clearMap();
+};
+
+processSensor = function(idx, sensor) {
+	updateTable(sensor);
+	updateMap(idx, sensor);
+};
+
+path.on('mouseover', function(e) {
+	const ll = e.latlng;
+	const path = e.sourceTarget;
+	const pts = path.getLatLngs();
+	let closestDist = Number.POSITIVE_INFINITY;
+	let closest = null;
+	for (const pt of pts) {
+		const dist = ll.distanceTo(pt);
+		if (dist < closestDist) {
+			closestDist = dist;
+			closest = pt;
+		}
+	}
+	const idx = closest.sensorIdx;
+	clearTableValues();
+	for (let i=Math.max(idx-50, 0); i<=idx; i++) {
+		updateTable(sensorLog[i]);
+	}
+});
+</script>
+<script type="text/javascript">
+if (s3) {
+	document.getElementById('keySelect').onchange = function(evt) {
+		const key = evt.target.value;
+		if (key.length > 0) {
+			s3.getObject({
+				Bucket: config.bucket,
+				Key: key
+			}, function(err, data) {
+				if (err) {
+					console.log(err);
+				}
+
+				loadSensorLog(data.Body);
+
+				resetUI();
+				armed = false;
+				gpsFix = false;
+				for (let i=0; i<sensorLog.length; i++) {
+					processSensor(i, sensorLog[i]);
+				}
+				flyToLast();
+			});
+		}
+	};
+	document.getElementById('play').onclick = function(evt) {
+		clearTableValues();
+		clearMap();
+		armed = false;
+		gpsFix = false;
+		frame = 0;
+		evt.target.disabled = true;
+		timer = setInterval(function() {
+			if (frame < sensorLog.length) {
+				processSensor(frame, sensorLog[frame]);
+				flyToLast();
+				frame++;
+			} else {
+				clearInterval(timer);
+				evt.target.disabled = false;
+			}
+		}, 10);
+	}
+	document.getElementById('play').disabled = false;
+	document.getElementById('clear').onclick = function(evt) {
+		sensorLog = [];
+		resetUI();
+	};
+	document.getElementById('clear').disabled = false;
+}
+</script>
+<script type="text/javascript">
+connectToMqtt = function() {
+	const signedUrl = SigV4Utils.getSignedIoTUrl(config.mqttBroker, AWS.config);
+	mqttClient = mqtt.connect(signedUrl);
+	mqttClient.on('message', function(topic, payload) {
+		const s = new TextDecoder('UTF-8').decode(payload);
+		try {
+			let sensor = JSON.parse(s);
+			if (sensor.value) {
+				sensor.name = topic.substring(config.mqttTopic.length+1);
+				const idx = sensorLog.push(sensor) - 1;
+				processSensor(idx, sensor);
+				flyToLast();
+			}
+		} catch(ex) {
+			console.log(ex+"\n'"+s+"'");
+		}
+	});
+	mqttClient.subscribe(config.mqttTopic+'/#');
+};
+
+lambda = authToken ? new AWS.Lambda() : null;
+if (lambda && AWS.config.credentials.identityId) {
+	let firstConnect = true;
+	let mqttClient = null;
+	document.getElementById('live').onclick = function(evt) {
+		if (mqttClient != null) {
+			mqttClient.end();
+			mqttClient = null;
+			evt.target.value = 'Live';
+		} else {
+			evt.target.value = 'Stop';
+			if (firstConnect) {
+				lambda.invoke({
+					FunctionName: config.attachIoTSubscriberPolicyLambda,
+					Payload: JSON.stringify({identityId: AWS.config.credentials.identityId})
+				}, function(err,data) {
+					if (err) {
+						console.log(err);
+					}
+					connectToMqtt();
+				});
+				firstConnect = false;
+			} else {
+				connectToMqtt();
+			}
+		}
+	};
+	document.getElementById('live').disabled = false;
+}
+</script>
+<div><a id="sensorLog" href="#">Sensor log</a></div>
+<script type="text/javascript">
+document.getElementById('sensorLog').onclick = function(evt) {
+	const data = JSON.stringify(sensorLog, null, 1);
+	evt.target.href = URL.createObjectURL(new Blob([data], {type: 'application/json'}));
+	return true;
+};
+</script>
+<div><a id="gpsData" href="#">GPS data</a></div>
+<script type="text/javascript">
+document.getElementById('gpsData').onclick = function(evt) {
+	let data = '';
+	let lastAlt = 0.0;
+	for (const point of path.getLatLngs()) {
+		const alt = ('alt' in point) ? point.alt : lastAlt;
+		data += point.lng+', '+point.lat+', '+alt+'\n';
+		lastAlt = alt;
+	}
+	evt.target.href = URL.createObjectURL(new Blob([data], {type: 'text/csv'}));
+	return true;
+};
+</script>
+</body>
+</html>
