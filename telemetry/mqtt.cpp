@@ -10,6 +10,7 @@
 #define TOPIC_BUFFER_SIZE 64
 #define PAYLOAD_BUFFER_SIZE 128
 #define RECONNECT_DELAY 372
+#define MQTT_PUBLISH_RATE 100
 
 static Telemetry* _telemetry;
 
@@ -133,7 +134,8 @@ bool ensureConnected() {
 }
 
 bool mqttPublishSensor(const Sensor& sensor) {
-  if (isMqttRunning && WiFi.isConnected()) {
+  static uint32_t lastPublish = 0;
+  if (isMqttRunning && WiFi.isConnected() && (millis() - lastPublish) > MQTT_PUBLISH_RATE) {
     if (ensureConnected()) {
       char* payload = new char[PAYLOAD_BUFFER_SIZE];
       int payloadPos = sprints(payload, "{\"value\": ");
@@ -217,6 +219,7 @@ bool mqttPublishSensor(const Sensor& sensor) {
       }
       delete[] topicBuf;
       delete[] payload;
+      lastPublish = millis();
       return rc;
     }
   }
