@@ -20,3 +20,12 @@ Output:
    - JSON REST API,
    - WebSockets,
    - MQTT (e.g. IoT).
+
+## Dependencies
+
+ - MQTT
+ - NimBLE-Arduino
+ - AsyncTCP
+ - ESPAsyncWebServer
+
+ 

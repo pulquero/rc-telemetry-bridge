@@ -8,8 +8,6 @@
 #define DATA_OFFSET (HEADER_SIZE+1)
 #define RADIO_ADDRESS 0xEA
 
-#define SPORT_PHYSICAL_ID 0x1B
-
 enum CrsfRfMode {
   CRSF_RF_MODE_4_HZ = 0,
   CRSF_RF_MODE_50_HZ = 1,

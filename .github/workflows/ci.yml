@@ -1,0 +1,29 @@
+name: RC telemetry bridge
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        board:
+          - "esp32:esp32:esp32:PSRAM=disabled,PartitionScheme=no_ota,CPUFreq=240,FlashMode=qio,FlashFreq=80,FlashSize=4M,UploadSpeed=921600,DebugLevel=none"
+        include:
+          - board: "esp32:esp32:esp32:PSRAM=disabled,PartitionScheme=no_ota,CPUFreq=240,FlashMode=qio,FlashFreq=80,FlashSize=4M,UploadSpeed=921600,DebugLevel=none"
+            platform: "esp32:esp32"
+            opts: "--additional-urls https://dl.espressif.com/dl/package_esp32_index.json"
+
+    steps:
+    - uses: actions/checkout@v2
+    - uses: arduino/setup-arduino-cli@v1.1.1
+    - run: |
+        arduino-cli update ${{ matrix.opts }}
+        arduino-cli core install ${{ matrix.platform }} ${{ matrix.opts }}
+        arduino-cli lib install MQTT NimBLE-Arduino
+        git clone https://github.com/me-no-dev/AsyncTCP.git
+        git clone https://github.com/me-no-dev/ESPAsyncWebServer.git
+        arduino-cli compile -b ${{ matrix.board }} --build-property "compiler.cpp.extra_flags=${{ matrix.flags }}" --libraries AsyncTCP,ESPAsyncWebServer telemetry
