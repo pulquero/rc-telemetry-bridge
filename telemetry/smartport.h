@@ -2,7 +2,6 @@
  * Smart port protocol.
  */
 #include <stdint.h>
-#include "sensors.h"
 
 #define SPORT_POLL_PACKET_LEN 1
 #define SPORT_DATA_PACKET_LEN 9

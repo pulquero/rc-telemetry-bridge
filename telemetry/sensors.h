@@ -115,6 +115,12 @@
 #define ZSTR_RB3040_CHANNEL6           "CH6A"
 #define ZSTR_RB3040_CHANNEL7           "CH7A"
 #define ZSTR_RB3040_CHANNEL8           "CH8A"
+#define ZSTR_FRAME_RATE                "FRat"
+#define ZSTR_TOTAL_LATENCY             "TLat"
+#define ZSTR_VTX_FREQ                  "VFrq"
+#define ZSTR_VTX_PWR                   "VPwr"
+#define ZSTR_VTX_CHAN                  "VChn"
+#define ZSTR_VTX_BAND                  "VBan"
 #define ZSTR_SERVO_CURRENT             "SrvA"
 #define ZSTR_SERVO_VOLTAGE             "SrvV"
 #define ZSTR_SERVO_TEMPERATURE         "SrvT"
@@ -145,6 +151,8 @@ enum SensorUnit {
   UNIT_CELLS,
   UNIT_DATETIME,
   UNIT_GPS,
+  UNIT_GPS_LONGITUDE,
+  UNIT_GPS_LATITUDE,
   UNIT_BITFIELD,
   UNIT_TEXT
 };

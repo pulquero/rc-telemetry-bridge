@@ -145,6 +145,8 @@ const String settingsTemplateProcessor(const String& var) {
     return _telemetry->config.input.protocol == PROTOCOL_SMART_PORT ? checked : empty;
   } else if (var == "PROTOCOL_CRSF") {
     return _telemetry->config.input.protocol == PROTOCOL_CRSF ? checked : empty;
+  } else if (var == "PROTOCOL_GHST") {
+    return _telemetry->config.input.protocol == PROTOCOL_GHST ? checked : empty;
   } else if (var == "USB_DISABLED") {
     return _telemetry->config.usb.mode == MODE_DISABLED ? checked : empty;
   } else if (var == "USB_PASSTHRU") {
@@ -229,6 +231,8 @@ void sendSettings(AsyncWebServerRequest* request) {
         TelemetryProtocol newProtocol;
         if (value == "crsf") {
           newProtocol = PROTOCOL_CRSF;
+        } else if (value == "ghst") {
+          newProtocol = PROTOCOL_GHST;
         } else {
           newProtocol = PROTOCOL_SMART_PORT;
         }

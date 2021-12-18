@@ -1,4 +1,6 @@
 #include "platform.h"
+#include "sensors.h"
+#include "bytes.h"
 #include "smartport.h"
 #include "debug.h"
 
@@ -8,8 +10,6 @@
 #define DATA_FRAME 0x10
 
 static int stuffByte(uint8_t*const data, uint8_t b);
-static uint16_t read16(uint8_t*const data);
-static uint32_t read32(uint8_t*const data);
 
 static SPortPacket* sportPacket;
 
@@ -107,24 +107,6 @@ int stuffByte(uint8_t*const data, uint8_t b) {
   }
 }
 
-uint16_t read16(uint8_t*const data) {
-  uint16_t result;
-  // little endian
-  result = data[0];
-  result |= data[1] << 8;
-  return result;
-}
-
-uint32_t read32(uint8_t*const data) {
-  uint32_t result;
-  // little endian
-  result = data[0];
-  result |= data[1] << 8;
-  result |= data[2] << 16;
-  result |= data[3] << 24;
-  return result;
-}
-
 
 bool SPortPacket::add(uint8_t b) {
   // read current packet
@@ -177,11 +159,11 @@ uint8_t SPortPacket::frameId() {
 }
 
 uint16_t SPortPacket::sensorId() {
-  return read16(buffer+2);
+  return ::read16le(buffer+2);
 }
 
 uint32_t SPortPacket::sensorData() {
-  return read32(buffer+4);
+  return ::read32le(buffer+4);
 }
 
 int SPortPacket::size() {

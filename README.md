@@ -1,10 +1,13 @@
+![CI](https://github.com/pulquero/rc-telemetry-bridge/actions/workflows/ci.yml/badge.svg)
+
 # RC Telemetry Bridge
 
 Use an ESP32 to consume telemetry from your radio and send it over various transports.
 
 Supports the following telemetry protocols:
  -  FrSky Smart port,
- - TBS Crossfire CRSF.
+ - TBS Crossfire CRSF,
+ - ImmersionRC Ghost.
 
 Input:
  - Smart port UART from FrSky compatible radio to ESP32 UART2.
@@ -21,11 +24,18 @@ Output:
    - WebSockets,
    - MQTT (e.g. IoT).
 
-## Dependencies
+## Hardware
+
+Minimum:
+ - ESP32 development board.
+
+Optional:
+ - 5 LEDs.
+
+## Software dependencies
 
  - MQTT
  - NimBLE-Arduino
  - AsyncTCP
  - ESPAsyncWebServer
 
- 

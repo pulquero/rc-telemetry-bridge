@@ -59,7 +59,7 @@ if (hasL) {
 	altMarkers = [];
 }
 
-htmlSensorValue = function(value, unit) {
+const htmlSensorValue = function(value, unit) {
 	if (unit === 'rad') {
 		return (value*180.0/Math.PI).toFixed(1) + '°';
 	} else {
@@ -67,7 +67,7 @@ htmlSensorValue = function(value, unit) {
 	}
 };
 
-updateTable = function(sensor) {
+const updateTable = function(sensor) {
 	const id = sensor.physicalId+'/'+sensor.sensorId;
 	let row = document.getElementById(id);
 	if (!row) {
@@ -109,7 +109,7 @@ updateTable = function(sensor) {
 	}
 };
 
-updateMap = function(sensor) {
+const updateMap = function(sensor) {
 	const id = hex(sensor.sensorId);
 	if ((id >= hex('0x0800') && id <= hex('0x080F')) || (sensor.sensorId === '0002/0')) {
 		// GPS
@@ -117,15 +117,24 @@ updateMap = function(sensor) {
 		if (current) {
 			map.flyTo(current, 17, {animate: true});
 		}
+	} else if (sensor.sensorId === '0010') {
+    const id = sensor.physicalId+'/000F';
+    const row = document.getElementById(id);
+    const lat = row.dataset.value;
+	  const lng = sensor.value;
+    const current = addToPath(lat, lng, path);
+    if (current) {
+      map.flyTo(current, 17, {animate: true});
+    }
 	} else if ((id >= hex('0x0100') && id <= hex('0x10F')) || (sensor.sensorId === '0002/3')) {
 		// Altitude
 		addAltitudeMarker(sensor.value, path, altMarkers);
 	}
 };
 
-sensorLog = [];
+const sensorLog = [];
 
-updateSensor = function(sensor) {
+const updateSensor = function(sensor) {
 	updateTable(sensor);
 	sensorLog.push(sensor);
 	if (hasL) {
