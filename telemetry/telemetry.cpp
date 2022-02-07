@@ -755,7 +755,7 @@ void Telemetry::load() {
   loadPreferenceString(preferences, "wifiHostname", config.wifi.client.hostname, NAME_SIZE, "telemetry");
   loadPreferenceString(preferences, "wifiStaSsid", config.wifi.client.remote.ssid, SSID_SIZE);
   loadPreferenceString(preferences, "wifiStaPassword", config.wifi.client.remote.password, PASSWORD_SIZE);
-  config.wifi.mode = (WiFiMode_t) preferences.getShort("wifiMode", WIFI_OFF);
+  config.wifi.mode = (WiFiMode_t) preferences.getShort("wifiMode", WIFI_AP);
   loadPreferenceString(preferences, "mapTiles", config.map.tiles, URL_SIZE);
   loadPreferenceString(preferences, "mapApiKey", config.map.apiKey, API_KEY_SIZE);
   loadPreferenceString(preferences, "mqttBroker", config.mqtt.broker, ENDPOINT_SIZE);
