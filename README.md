@@ -41,17 +41,15 @@ Optional:
 
 ## Install
 
-1. Install [Arduino IDE](https://www.arduino.cc/en/software).
-2. Download [Arduino-CLI](https://arduino.github.io/arduino-cli/latest/installation).
-3. Run `install_libs.cmd`/`install_libs.sh` to install the library dependencies
- (ensure the `arduino-cli` executable is in the same directory).
-4. Open `telemetry/telemetry.ino` in Arduino IDE.
-5. Select your hardware (e.g. ESP32 Dev Module) under 'Tools' -> 'Board: ...' -> 'ESP32 Arduino'.
-6. Change 'Tools' -> 'Partition Scheme' to 'No OTA (2MB APP/2MB SPIFFS)'.
-7. Connect your ESP32 board.
-8. Change 'Tools' -> 'Port' to the port the ESP32 board is connected to.
-9. Run 'Tools' -> 'ESP32 Sketch Data Upload'.
-10. Hit the upload button.
+1. Install [Arduino IDE](https://www.arduino.cc/en/software) (version 1.8 or higher required).
+2. Run `install_libs.cmd`/`install_libs.sh` to install ESP32 tools and library dependencies.
+3. Open `telemetry/telemetry.ino` in Arduino IDE.
+4. Select your hardware (e.g. ESP32 Dev Module) under 'Tools' -> 'Board: ...' -> 'ESP32 Arduino'.
+5. Change 'Tools' -> 'Partition Scheme' to 'No OTA (2MB APP/2MB SPIFFS)'.
+6. Connect your ESP32 board.
+7. Change 'Tools' -> 'Port' to the port the ESP32 board is connected to.
+8. Run 'Tools' -> 'ESP32 Sketch Data Upload'.
+9. Hit the upload button.
 
 ## Instructions
 
