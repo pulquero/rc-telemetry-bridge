@@ -3,12 +3,14 @@
 
 #include <WiFiGeneric.h>
 #include "sensors.h"
+#include "bytes.h"
 
 #define MAX_SENSORS 50
+#define INCOMING_CAPACITY 64
 #define strncpy_s(dst, src, n) strncpy(dst, src, n);dst[n-1] = '\0';
 
 enum SerialSource {
-  SOURCE_NONE, SOURCE_UART, SOURCE_BLE
+  SOURCE_NONE, SOURCE_UART, SOURCE_BLE, SOURCE_SOCKET
 };
 
 enum TelemetryProtocol {
@@ -72,6 +74,16 @@ typedef struct {
     char topic[TOPIC_SIZE] = {'\0'};
   } mqtt;
   struct {
+    struct {
+      char hostname[NAME_SIZE] = {'\0'};
+      uint16_t port;
+    } client;
+    struct {
+      uint16_t port;
+      SerialMode mode;
+    } server;
+  } socket;
+  struct {
     bool enableHallEffect;
   } internalSensors;
 } config_t;
@@ -81,7 +93,10 @@ class Telemetry final {
   config_t config;
   Sensor sensors[MAX_SENSORS];
   int numSensors = 0;
+  Buffer<uint8_t,INCOMING_CAPACITY> incoming;
+  SerialSource incomingSource;
 
+  void copyToIncoming(uint8_t* data, size_t len, SerialSource source);
   Sensor* updateSensor(uint8_t physicalId, uint16_t sensorId, uint8_t subId, uint32_t sensorData, SensorDataType sensorDataType);
   Sensor* getSensor(uint8_t physicalId, uint16_t sensorId, uint8_t subId);
   void load();

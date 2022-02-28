@@ -32,7 +32,8 @@
 #include "crsf.h"
 #include "ghst.h"
 #include "web.h"
-#include "mqtt.h"
+#include "mqtt-transport.h"
+#include "socket-transport.h"
 
 #include "debug.h"
 
@@ -74,7 +75,7 @@ static bool btCongested = false;
 static BLEServer* bleServer;
 static BLECharacteristic* bleChar;
 static bool bleIsAdvertising = false;
-static int bleDataSize = 23 - MTU_OVERHEAD;
+static int blePacketDataSize = 23 - MTU_OVERHEAD;
 #endif
 
 static uint32_t serialPacketCount = 0;
@@ -82,11 +83,6 @@ static uint32_t webMsgCount = 0;
 
 static const uint8_t touchPins[] = {WIFI_STA_TOUCH_PIN, BLE_ADVERT_TOUCH_PIN, WIFI_AP_TOUCH_PIN};
 static Telemetry telemetry;
-#define INCOMING_CAPACITY 20
-static uint8_t incoming[INCOMING_CAPACITY];
-static SerialSource incomingSource;
-static int incomingReadPos = 0;
-static int incomingWritePos = 0;
 
 static uint8_t sendBuffer[SERIALIZATION_BUFFER_SIZE];
 
@@ -98,6 +94,7 @@ static bool startWiFiSTA();
 static bool stopWiFi();
 static void sendInternalSensors(bool includeStart);
 static void loadPreferenceString(Preferences& prefs, const char* key, char* value, int maxSize, const char* defaultValue);
+
 
 #ifdef USE_BT_SPP
 void btTelemetryCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
@@ -126,7 +123,7 @@ int bleTelemetryCallback(struct ble_gap_event* event, void* param) {
     case BLE_GAP_EVENT_MTU:
       LOGD("BLE MTU set to %d", event->mtu.value);
       // ensure we don't exceed the buffer size
-      bleDataSize = min(event->mtu.value - MTU_OVERHEAD, BLE_BUFFER_SIZE);
+      blePacketDataSize = min(event->mtu.value - MTU_OVERHEAD, BLE_BUFFER_SIZE);
       break;
     default:
       ;
@@ -139,7 +136,7 @@ void bleTelemetryCallback(esp_gatts_cb_event_t event, esp_gatt_if_t gattc_if, es
     case ESP_GATTS_MTU_EVT:
       LOGD("BLE MTU set to %d", param->mtu.mtu);
       // ensure we don't exceed the buffer size
-      bleDataSize = min(param->mtu.mtu - MTU_OVERHEAD, BLE_BUFFER_SIZE);
+      blePacketDataSize = min(param->mtu.mtu - MTU_OVERHEAD, BLE_BUFFER_SIZE);
       break;
     default:
       ;
@@ -150,11 +147,7 @@ void bleTelemetryCallback(esp_gatts_cb_event_t event, esp_gatt_if_t gattc_if, es
 
 #ifdef USE_BLE_CLIENT
 void bleSourceCallback(BLERemoteCharacteristic* remoteChar, uint8_t* data, size_t len, bool isNotify) {
-  if (INCOMING_CAPACITY - incomingWritePos > len) {
-    memcpy(incoming+incomingWritePos, data, len);
-    incomingWritePos += len;
-    incomingSource = SOURCE_BLE;
-  }
+  telemetry.copyToIncoming(data, len, SOURCE_BLE);
 }
 
 bool bleSourceConnect() {
@@ -309,6 +302,40 @@ void setup() {
   LOGMEM("post-setup");
 }
 
+void bleWrite(uint8_t* data, int len, SerialMode mode) {
+  static Buffer<uint8_t,BLE_BUFFER_SIZE> bleBuffer;
+  if (mode == MODE_FILTER) {
+    // send complete telemetry packets
+    // if it doesn't fit and there is already data in the buffer then send it
+    if (!bleBuffer.isEmpty() && !bleBuffer.fitsWithin(blePacketDataSize - len)) {
+      bleChar->setValue(bleBuffer.data(), bleBuffer.size());
+      bleChar->notify();
+      bleBuffer.reset();
+    }
+    // can the buffer + len fit within blePacketDataSize
+    if (bleBuffer.fitsWithin(blePacketDataSize - len)) {
+      bleBuffer.copyFrom(data, len);
+    } else {
+      LOGE("Discarding BLE data - exceeds MTU");
+    }
+    // send data now if there is no more space to fit further packets
+    if (!bleBuffer.fitsWithin(blePacketDataSize - SERIALIZED_PACKET_SIZE)) {
+      bleChar->setValue(bleBuffer.data(), bleBuffer.size());
+      bleChar->notify();
+      bleBuffer.reset();
+    }
+  } else {
+    for (int i=0; i<len; i++) {
+      bleBuffer.add(data[i]);
+      if (bleBuffer.size() == blePacketDataSize) {
+        bleChar->setValue(bleBuffer.data(), bleBuffer.size());
+        bleChar->notify();
+        bleBuffer.reset();
+      }
+    }
+  }
+}
+
 void write(uint8_t* data, int len, SerialMode mode) {
 #ifndef DEBUG
   if (telemetry.config.usb.mode == mode) {
@@ -332,55 +359,37 @@ void write(uint8_t* data, int len, SerialMode mode) {
 #endif
 #ifdef USE_BLE_SERVER
   if (telemetry.config.ble.mode == mode) {
-    static uint8_t bleBuffer[BLE_BUFFER_SIZE];
-    static int bleWritePos = 0;
-    if (mode == MODE_FILTER) {
-      // if it doesn't fit and there is already data in the buffer then send it
-      if (len > bleDataSize - bleWritePos && bleWritePos > 0) {
-        bleChar->setValue(bleBuffer, bleWritePos);
-        bleChar->notify();
-        bleWritePos = 0;
-      }
-      if (len <= bleDataSize - bleWritePos) {
-        for (int i=0; i<len; i++) {
-          bleBuffer[bleWritePos++] = data[i];
-        }
-      } else {
-        LOGE("Discarding BLE data - exceeds MTU");
-      }
-      // send data now if there is no more space to fit further packets
-      if (bleWritePos > bleDataSize - SERIALIZED_PACKET_SIZE) {
-        bleChar->setValue(bleBuffer, bleWritePos);
-        bleChar->notify();
-        bleWritePos = 0;
-      }
-    } else {
-      for (int i=0; i<len; i++) {
-        bleBuffer[bleWritePos++] = data[i];
-        if (bleWritePos == bleDataSize) {
-          bleChar->setValue(bleBuffer, bleWritePos);
-          bleChar->notify();
-          bleWritePos = 0;
-        }
-      }
-    }
+    bleWrite(data, len, mode);
   }
 #endif
+  if (telemetry.config.socket.server.mode == mode) {
+    socketWrite(data, len);
+  }
+}
+
+void bleEnsureConnected(uint32_t ms) {
+  static uint32_t lastConnectAttempt = 0;
+  if (bleClient && !bleClient->isConnected() && (ms - lastConnectAttempt) > BLE_RECONNECT_DELAY) {
+    if (bleSourceConnect()) {
+      lastConnectAttempt = 0;
+    } else {
+      lastConnectAttempt = ms;
+    }
+  }
 }
 
 void loop() {
   static uint32_t lastSerialCheckpoint = 0;
   const uint32_t ms = millis();
 
-  if (incomingReadPos < incomingWritePos) {
-    write(incoming+incomingReadPos, incomingWritePos - incomingReadPos, MODE_PASS_THRU);
-    while (incomingReadPos < incomingWritePos) {
-      if (protocolOnReceive(incoming[incomingReadPos++]) > 0 && incomingSource > 0) {
+  if (!telemetry.incoming.isEmpty()) {
+    write(telemetry.incoming.data(), telemetry.incoming.size(), MODE_PASS_THRU);
+    while (!telemetry.incoming.isEmpty()) {
+      if (protocolOnReceive(telemetry.incoming.read()) > 0 && telemetry.incomingSource > 0) {
         serialPacketCount++;
       }
     }
-    incomingReadPos = 0;
-    incomingWritePos = 0;
+    telemetry.incoming.reset();
   } else if (telemetry.config.input.source == SOURCE_UART) {
     // rx is floating by default so when nothing is connected we may read noise
     if (Serial2.available()) {
@@ -400,14 +409,9 @@ void loop() {
       lastSerialCheckpoint = ms;
     }
   } else if (telemetry.config.input.source == SOURCE_BLE) {
-    static uint32_t lastBleConnectAttempt = 0;
-    if (bleClient && !bleClient->isConnected() && (ms - lastBleConnectAttempt) > BLE_RECONNECT_DELAY) {
-      if (bleSourceConnect()) {
-        lastBleConnectAttempt = 0;
-      } else {
-        lastBleConnectAttempt = ms;
-      }
-    }
+    bleEnsureConnected(ms);
+  } else if (telemetry.config.input.source == SOURCE_SOCKET) {
+    socketEnsureConnected(ms);
   }
 
   checkButtons(ms);
@@ -545,6 +549,7 @@ bool startWiFiAP() {
   if (WiFi.softAP(telemetry.config.wifi.ap.ssid, telemetry.config.wifi.ap.password)) {
     WiFi.softAPConfig(localHost, gateway, subnet);
     webBegin(&telemetry);
+    socketBegin(&telemetry);
     LOGD("Started WiFi AP: mode %d", WiFi.getMode());
     return true;
   } else {
@@ -561,6 +566,7 @@ bool startWiFiSTA() {
   if (status != WL_CONNECT_FAILED) {
     mqttBegin(&telemetry);
     webBegin(&telemetry);
+    socketBegin(&telemetry);
     LOGD("Started WiFi station: mode %d (status %d)", WiFi.getMode(), status);
     return true;
   } else {
@@ -570,6 +576,7 @@ bool startWiFiSTA() {
 }
 
 bool stopWiFi() {
+  socketStop();
   webStop();
   mqttStop();
   WiFi.disconnect(true);
@@ -587,20 +594,24 @@ void processPollPacket(uint8_t physicalId) {
 void sendInternalSensors(bool includeStart) {
   if (telemetry.config.internalSensors.enableHallEffect) {
     static uint32_t lastSent = 0;
-    if ((millis() - lastSent) > 103 && (INCOMING_CAPACITY - incomingWritePos) > 18) {
+    if ((millis() - lastSent) > 103 && telemetry.incoming.remaining() > 18) {
       const uint32_t hallValue = hallRead();
-      incomingWritePos += sportWriteSensorPacket(incoming+incomingWritePos, PHYSICAL_SENSOR_ID, HALL_EFFECT_ID, hallValue, includeStart);
-      if (incomingWritePos > INCOMING_CAPACITY) {
-        LOGE("Incoming buffer exceeded! (%d)", incomingWritePos);
+      const int bytesWritten = sportWriteSensorPacket(telemetry.incoming.newData(), PHYSICAL_SENSOR_ID, HALL_EFFECT_ID, hallValue, includeStart);
+      telemetry.incoming.supplied(bytesWritten);
+      if (telemetry.incoming.remaining() < 0) {
+        LOGE("Incoming buffer exceeded! (%d)", telemetry.incoming.remaining());
       }
-      incomingSource = SOURCE_NONE;
+      telemetry.incomingSource = SOURCE_NONE;
       lastSent = millis();
     }
   }
 }
 
 bool isFilterModeActive() {
-  return (telemetry.config.usb.mode == MODE_FILTER || telemetry.config.bt.mode == MODE_FILTER || telemetry.config.ble.mode == MODE_FILTER);
+  return (telemetry.config.usb.mode == MODE_FILTER
+        || telemetry.config.bt.mode == MODE_FILTER
+        || telemetry.config.ble.mode == MODE_FILTER
+        || telemetry.config.socket.server.mode == MODE_FILTER);
 }
 
 void outputSPortSensorPacket(uint8_t physicalId, uint16_t sensorId, uint32_t sensorData) {
@@ -658,6 +669,11 @@ void processSensorPacket(uint8_t physicalId, uint16_t sensorId, uint8_t subId, u
   }
 }
 
+void Telemetry::copyToIncoming(uint8_t* data, size_t len, SerialSource source) {
+  incoming.copyFrom(data, len);
+  incomingSource = source;
+}
+
 Sensor* Telemetry::updateSensor(uint8_t physicalId, uint16_t sensorId, uint8_t subId, uint32_t sensorData, SensorDataType sensorDataType) {
   Sensor* sensor = getSensor(physicalId, sensorId, subId);
   if (sensor == nullptr) {
@@ -675,74 +691,6 @@ Sensor* Telemetry::updateSensor(uint8_t physicalId, uint16_t sensorId, uint8_t s
   }
   sensor->setValue(sensorData, sensorDataType);
   return sensor;
-}
-
-void Sensor::setValue(uint32_t sensorData, SensorDataType sensorDataType) {
-  if (info) {
-    if (info->unit == UNIT_GPS) {
-      if (sensorDataType == GPS_LONGITUDE) {
-        setGpsLongitude(sensorData);
-      } else if (sensorDataType == GPS_LATITUDE) {
-        setGpsLatitude(sensorData);
-      } else {
-        setGpsValue(sensorData);
-      }
-    } else {
-      setNumericValue(sensorData);
-    }
-  } else {
-    setNumericValue(sensorData);
-  }
-  lastUpdated = millis();
-}
-
-void Sensor::setGpsValue(uint32_t sensorData) {
-  int32_t v = (sensorData & 0x3FFFFFFF); // abs value
-  if (sensorData & 0x40000000) {
-    // restore sign
-    v = -v;
-  }
-  if (sensorData & 0x80000000) { // is longitude
-    setGpsLongitude(v);
-  } else {
-    setGpsLatitude(v);
-  }
-}
-
-void Sensor::setGpsLongitude(uint32_t sensorData) {
-  if (value.gps.longitude != sensorData) {
-    lastChangedValue.gps.longitude = sensorData;
-    hasChangedSinceProcessed = true;
-  }
-  value.gps.longitude = sensorData;
-}
-
-void Sensor::setGpsLatitude(uint32_t sensorData) {
-  if (value.gps.latitude != sensorData) {
-    lastChangedValue.gps.latitude = sensorData;
-    hasChangedSinceProcessed = true;
-  }
-  value.gps.latitude = sensorData;
-}
-
-void Sensor::setNumericValue(uint32_t sensorData) {
-  const int32_t v = sensorData;
-  if (info == nullptr || info->precision <= 1) {
-    if (value.numeric != v) {
-      lastChangedValue.numeric = v;
-      hasChangedSinceProcessed = true;
-    }
-  } else if(info->precision > 1) {
-    int32_t diff = abs(v - lastChangedValue.numeric);
-    for (int i=0; i<info->precision; i++) {
-      diff /= 10;
-    }
-    if (diff > 0) {
-      lastChangedValue.numeric = v;
-      hasChangedSinceProcessed = true;
-    }
-  }
-  value.numeric = v;
 }
 
 Sensor* Telemetry::getSensor(uint8_t physicalId, uint16_t sensorId, uint8_t subId) {
@@ -770,6 +718,7 @@ void Telemetry::load() {
   // emergency reset
   //preferences.clear();
 
+  // max key length is 15!!!
   config.input.source = (SerialSource) preferences.getShort("inputSource", SOURCE_UART);
   loadPreferenceString(preferences, "btSource", config.input.btAddress, BD_ADDR_SIZE);
   config.input.protocol = (TelemetryProtocol) preferences.getShort("protocol", PROTOCOL_SMART_PORT);
@@ -790,6 +739,10 @@ void Telemetry::load() {
   loadPreferenceString(preferences, "mqttBroker", config.mqtt.broker, ENDPOINT_SIZE);
   config.mqtt.port = preferences.getShort("mqttPort", 8883);
   loadPreferenceString(preferences, "mqttTopic", config.mqtt.topic, TOPIC_SIZE);
+  loadPreferenceString(preferences, "soHostname", config.socket.client.hostname, NAME_SIZE);
+  config.socket.client.port = preferences.getShort("soClientPort", 9878);
+  config.socket.server.port = preferences.getShort("soServerPort", 9878);
+  config.socket.server.mode = (SerialMode) preferences.getShort("soMode", MODE_DISABLED);
   config.internalSensors.enableHallEffect = preferences.getBool("internalSensors", true);
   preferences.end();
 
@@ -807,6 +760,9 @@ void Telemetry::load() {
   LOGD("MQTT broker: '%s'", config.mqtt.broker);
   LOGD("MQTT port: %d", config.mqtt.port);
   LOGD("MQTT topic: '%s'", config.mqtt.topic);
+  LOGD("Socket client hostname: '%s'", config.socket.client.hostname);
+  LOGD("Socket client port: %d", config.socket.client.port);
+  LOGD("Socket server port: %d", config.socket.server.port);
 }
 
 void Telemetry::save() {
@@ -816,6 +772,7 @@ void Telemetry::save() {
     return;
   }
 
+  // max key length is 15!!!
   preferences.putShort("inputSource", config.input.source);
   preferences.putString("btSource", config.input.btAddress);
   preferences.putShort("protocol", config.input.protocol);
@@ -836,6 +793,10 @@ void Telemetry::save() {
   preferences.putString("mqttBroker", config.mqtt.broker);
   preferences.putShort("mqttPort", config.mqtt.port);
   preferences.putString("mqttTopic", config.mqtt.topic);
+  preferences.putString("soHostname", config.socket.client.hostname);
+  preferences.putShort("soClientPort", config.socket.client.port);
+  preferences.putShort("soServerPort", config.socket.server.port);
+  preferences.putShort("soMode", config.socket.server.mode);
   preferences.putBool("internalSensors", config.internalSensors.enableHallEffect);
   preferences.end();
 }

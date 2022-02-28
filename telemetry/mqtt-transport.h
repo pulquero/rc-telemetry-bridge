@@ -1,5 +1,5 @@
-#ifndef mqtt_h
-#define mqtt_h
+#ifndef mqtt_transport_h
+#define mqtt_transport_h
 
 /*
  * MQTT interface.
