@@ -10,6 +10,7 @@
 #define SENSOR_ID_BUFFER_SIZE 8
 #define JSON_BUFFER_SIZE 256
 #define WS_EMIT_RATE 100
+#define MAX_PORT 65535
 
 static void wsEventHandler(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len);
 static void sendJson(AsyncWebServerRequest* request);
@@ -139,8 +140,16 @@ const String settingsTemplateProcessor(const String& var) {
     return _telemetry->config.input.source == SOURCE_UART ? checked : empty;
   } else if (var == "SOURCE_BLE") {
     return _telemetry->config.input.source == SOURCE_BLE ? checked : empty;
+  } else if (var == "SOURCE_SOCKET") {
+    return _telemetry->config.input.source == SOURCE_SOCKET ? checked : empty;
   } else if (var == "BT_SOURCE") {
     return _telemetry->config.input.btAddress;
+  } else if (var == "SOCKET_CLIENT_HOSTNAME") {
+    return _telemetry->config.socket.client.hostname;
+  } else if (var == "SOCKET_CLIENT_PORT") {
+    static char szPort[6];
+    itoa(_telemetry->config.socket.client.port, szPort, 10);
+    return szPort;
   } else if (var == "PROTOCOL_SPORT") {
     return _telemetry->config.input.protocol == PROTOCOL_SMART_PORT ? checked : empty;
   } else if (var == "PROTOCOL_CRSF") {
@@ -169,6 +178,16 @@ const String settingsTemplateProcessor(const String& var) {
     return _telemetry->config.ble.mode == MODE_PASS_THRU ? checked : empty;
   } else if (var == "BLE_FILTER") {
     return _telemetry->config.ble.mode == MODE_FILTER ? checked : empty;
+  } else if (var == "SOCKET_SERVER_PORT") {
+    static char szPort[6];
+    itoa(_telemetry->config.socket.server.port, szPort, 10);
+    return szPort;
+  } else if (var == "SOCKET_DISABLED") {
+    return _telemetry->config.socket.server.mode == MODE_DISABLED ? checked : empty;
+  } else if (var == "SOCKET_PASSTHRU") {
+    return _telemetry->config.socket.server.mode == MODE_PASS_THRU ? checked : empty;
+  } else if (var == "SOCKET_FILTER") {
+    return _telemetry->config.socket.server.mode == MODE_FILTER ? checked : empty;
   } else if (var == "AP_HOSTNAME") {
     return _telemetry->config.wifi.ap.hostname;
   } else if (var == "AP_SSID") {
@@ -196,7 +215,7 @@ const String settingsTemplateProcessor(const String& var) {
   } else if (var == "MQTT_BROKER") {
     return _telemetry->config.mqtt.broker;
   } else if (var == "MQTT_PORT") {
-    static char szPort[8];
+    static char szPort[6];
     itoa(_telemetry->config.mqtt.port, szPort, 10);
     return szPort;
   } else if (var == "MQTT_TOPIC") {
@@ -222,11 +241,11 @@ void sendSettings(AsyncWebServerRequest* request) {
       if (name == "source") {
         if (value == "ble") {
           _telemetry->config.input.source = SOURCE_BLE;
+        } else if (value == "socket") {
+          _telemetry->config.input.source = SOURCE_SOCKET;
         } else {
           _telemetry->config.input.source = SOURCE_UART;
         }
-      } else if (name == "bt_source") {
-        strncpy_s(_telemetry->config.input.btAddress, value.c_str(), BD_ADDR_SIZE);
       } else if (name == "protocol") {
         TelemetryProtocol newProtocol;
         if (value == "crsf") {
@@ -240,6 +259,15 @@ void sendSettings(AsyncWebServerRequest* request) {
           protocolEnd();
           _telemetry->config.input.protocol = newProtocol;
           protocolBegin(_telemetry);
+        }
+      } else if (name == "bt_source") {
+        strncpy_s(_telemetry->config.input.btAddress, value.c_str(), BD_ADDR_SIZE);
+      } else if (name == "socket_client_hostname") {
+        strncpy_s(_telemetry->config.socket.client.hostname, value.c_str(), NAME_SIZE);
+      } else if (name == "socket_client_port") {
+        int port = atoi(value.c_str());
+        if (port <= MAX_PORT) {
+          _telemetry->config.socket.client.port = port;
         }
       } else if (name == "usb_mode") {
         if (value == "filter") {
@@ -268,6 +296,19 @@ void sendSettings(AsyncWebServerRequest* request) {
           _telemetry->config.ble.mode = MODE_PASS_THRU;
         } else {
           _telemetry->config.ble.mode = MODE_DISABLED;
+        }
+      } else if (name == "socket_server_port") {
+        int port = atoi(value.c_str());
+        if (port <= MAX_PORT) {
+          _telemetry->config.socket.server.port = port;
+        }
+      } else if (name == "socket_mode") {
+        if (value == "filter") {
+          _telemetry->config.socket.server.mode = MODE_FILTER;
+        } else if (value == "passthru") {
+          _telemetry->config.socket.server.mode = MODE_PASS_THRU;
+        } else {
+          _telemetry->config.socket.server.mode = MODE_DISABLED;
         }
       } else if (name == "ap_hostname") {
         strncpy_s(_telemetry->config.wifi.ap.hostname, value.c_str(), NAME_SIZE);
@@ -298,7 +339,10 @@ void sendSettings(AsyncWebServerRequest* request) {
       } else if (name == "mqtt_broker") {
         strncpy_s(_telemetry->config.mqtt.broker, value.c_str(), ENDPOINT_SIZE);
       } else if (name == "mqtt_port") {
-        _telemetry->config.mqtt.port = atoi(value.c_str());
+        int port = atoi(value.c_str());
+        if (port <= MAX_PORT) {
+          _telemetry->config.mqtt.port = port;
+        }
       } else if (name == "mqtt_topic") {
         strncpy_s(_telemetry->config.mqtt.topic, value.c_str(), TOPIC_SIZE);
       } else if (name == "internal_sensors") {

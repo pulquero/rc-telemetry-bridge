@@ -15,6 +15,7 @@
 Source:
 <input type="radio" name="source" value="uart" %SOURCE_UART%>UART</input>
 <input type="radio" name="source" value="ble" %SOURCE_BLE%>BLE</input>
+<input type="radio" name="source" value="socket" %SOURCE_SOCKET%>TCP/IP socket</input>
 </div>
 <div>
 Protocol:
@@ -26,6 +27,11 @@ Protocol:
 <div>
 Address:
 <input type="text" name="bt_source" size="18" maxlength="17" value="%BT_SOURCE%"/>
+</div>
+<h3>Socket</h3>
+<div>
+Hostname: <input type="text" name="socket_client_hostname" size="17" maxlength="16" value="%SOCKET_CLIENT_HOSTNAME%"/>
+Port: <input type="number" name="socket_client_port" value="%SOCKET_CLIENT_PORT%" min="0" max="65535"/>
 </div>
 
 <h2>Outputs</h2>
@@ -57,6 +63,17 @@ Mode:
 <input type="radio" name="ble_mode" value="disabled" %BLE_DISABLED%>Disabled</input>
 <input type="radio" name="ble_mode" value="passthru" %BLE_PASSTHRU%>Pass-thru</input>
 <input type="radio" name="ble_mode" value="filter" %BLE_FILTER%>Filter</input>
+</div>
+<h3>Socket server</h3>
+<div>
+Port:
+<input type="number" name="socket_server_port" value="%SOCKET_SERVER_PORT%" min="0" max="65535"/>
+</div>
+<div>
+Mode:
+<input type="radio" name="socket_mode" value="disabled" %SOCKET_DISABLED%>Disabled</input>
+<input type="radio" name="socket_mode" value="passthru" %SOCKET_PASSTHRU%>Pass-thru</input>
+<input type="radio" name="socket_mode" value="filter" %SOCKET_FILTER%>Filter</input>
 </div>
 
 <h2>Web</h2>
@@ -112,6 +129,7 @@ Port: <input type="number" name="mqtt_port" value="%MQTT_PORT%" min="0" max="655
 <div>
 Topic: <input type="text" name="mqtt_topic" size="32" maxlength="31" value="%MQTT_TOPIC%"/>
 </div>
+
 <h2>Misc</h2>
 <div>
 Internal sensors: <input type="checkbox" name="internal_sensors" %INTERNAL_SENSORS%/>

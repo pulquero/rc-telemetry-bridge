@@ -55,6 +55,7 @@ Optional:
 
 The ESP32 should start in WiFi access point mode.
 Point a browser at it, click on the 'Settings' link at the bottom of the page, and adjust the configuration appropriately.
+Then, reboot.
 
 ### Touch pin control
 
