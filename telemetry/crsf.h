@@ -5,6 +5,7 @@
 void crsfBegin();
 void crsfEnd();
 int crsfOnReceive(uint8_t b);
+int crsfWriteSensorPacket(uint8_t*const out, uint8_t deviceAddr, uint8_t frameType, uint8_t* frameData, int dataLen);
 
 class CrsfPacket final {
   private:

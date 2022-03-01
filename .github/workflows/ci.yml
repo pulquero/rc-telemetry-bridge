@@ -3,6 +3,8 @@ name: RC telemetry bridge
 on:
   push:
     branches: [ master ]
+  pull_request:
+    branches: [ master ]
 
 jobs:
   build:

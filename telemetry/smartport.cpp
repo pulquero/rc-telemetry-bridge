@@ -43,7 +43,7 @@ int sportOnReceive(uint8_t b) {
         if (sportPacket->isValid()) {
           uint8_t frameId = sportPacket->frameId();
           if (frameId == DATA_FRAME) {
-            outputSensorPacket(physicalId, sportPacket->sensorId(), sportPacket->sensorData());
+            outputSPortSensorPacket(physicalId, sportPacket->sensorId(), sportPacket->sensorData());
             processSensorPacket(physicalId, sportPacket->sensorId(), 0, sportPacket->sensorData());
           }
         } else {

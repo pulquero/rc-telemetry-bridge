@@ -75,8 +75,10 @@ int crsfOnReceive(uint8_t b) {
 }
 
 void crsfProcessPacket(CrsfPacket* packet) {
-  uint8_t addr = packet->deviceAddress();
-  switch (packet->frameType()) {
+  const uint8_t addr = packet->deviceAddress();
+  const uint8_t frameType = packet->frameType();
+  outputCrsfSensorPacket(addr, frameType, packet->readData(), packet->frameSize());
+  switch (frameType) {
     case CF_VARIO_ID:
       processSensorPacket(addr, CF_VARIO_ID, 0, (int16_t) packet->read16(0));
       break;

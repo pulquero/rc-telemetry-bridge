@@ -29,13 +29,15 @@
 #include "telemetry.h"
 #include "smartport.h"
 #include "smartport-sensors.h"
+#include "crsf.h"
+#include "ghst.h"
 #include "web.h"
 #include "mqtt.h"
 
 #include "debug.h"
 
 #define SERIALIZED_PACKET_SIZE (1+SPORT_DATA_PACKET_LEN+2+1) // allow for two byte stuffings
-#define SERIALIZATION_BUFFER_SIZE (1+2*SPORT_DATA_PACKET_LEN+1) // allow for everything to be byte-stuffed
+#define SERIALIZATION_BUFFER_SIZE 64 // large enough to hold biggest packet (of any protocol)
 #define SERVICE_UUID        "0000FFF0-0000-1000-8000-00805F9B34FB"
 #define CHARACTERISTIC_UUID "0000FFF6-0000-1000-8000-00805F9B34FB"
 #define MAX_MTU_SIZE 65
@@ -85,6 +87,8 @@ static uint8_t incoming[INCOMING_CAPACITY];
 static SerialSource incomingSource;
 static int incomingReadPos = 0;
 static int incomingWritePos = 0;
+
+static uint8_t sendBuffer[SERIALIZATION_BUFFER_SIZE];
 
 static void write(uint8_t* data, int len, SerialMode mode);
 static void checkButtons(uint32_t ms);
@@ -308,7 +312,7 @@ void setup() {
 void write(uint8_t* data, int len, SerialMode mode) {
 #ifndef DEBUG
   if (telemetry.config.usb.mode == mode) {
-    if (mode == MODE_FILTER) {
+    if (mode == MODE_FILTER && telemetry.config.input.protocol == PROTOCOL_SMART_PORT) {
       // skip initial START_STOP - previous packet has trailing START_STOP
       data++;
       len--;
@@ -318,7 +322,7 @@ void write(uint8_t* data, int len, SerialMode mode) {
 #endif
 #ifdef USE_BT_SPP
   if (telemetry.config.bt.mode == mode && !btCongested) {
-    if (mode == MODE_FILTER) {
+    if (mode == MODE_FILTER && telemetry.config.input.protocol == PROTOCOL_SMART_PORT) {
       // skip initial START_STOP
       data++;
       len--;
@@ -595,14 +599,39 @@ void sendInternalSensors(bool includeStart) {
   }
 }
 
-void outputSensorPacket(uint8_t physicalId, uint16_t sensorId, uint32_t sensorData) {
-  static uint8_t sendBuffer[SERIALIZATION_BUFFER_SIZE];
-  if (telemetry.config.usb.mode == MODE_FILTER || telemetry.config.bt.mode == MODE_FILTER || telemetry.config.ble.mode == MODE_FILTER) {
-    int packetSize = sportWriteSensorPacket(sendBuffer, physicalId, sensorId, sensorData, true);
+bool isFilterModeActive() {
+  return (telemetry.config.usb.mode == MODE_FILTER || telemetry.config.bt.mode == MODE_FILTER || telemetry.config.ble.mode == MODE_FILTER);
+}
+
+void outputSPortSensorPacket(uint8_t physicalId, uint16_t sensorId, uint32_t sensorData) {
+  if (isFilterModeActive()) {
+    const int packetSize = sportWriteSensorPacket(sendBuffer, physicalId, sensorId, sensorData, true);
     if (packetSize <= SERIALIZATION_BUFFER_SIZE) {
       write(sendBuffer, packetSize, MODE_FILTER);
     } else {
-      LOGE("Send buffer exceeded! (%d)", packetSize);
+      LOGE("Send buffer exceeded (SPort)! (%d)", packetSize);
+    }
+  }
+}
+
+void outputCrsfSensorPacket(uint8_t deviceAddr, uint8_t frameType, uint8_t* frameData, int dataLen) {
+  if (isFilterModeActive()) {
+    const int packetSize = crsfWriteSensorPacket(sendBuffer, deviceAddr, frameType, frameData, dataLen);
+    if (packetSize <= SERIALIZATION_BUFFER_SIZE) {
+      write(sendBuffer, packetSize, MODE_FILTER);
+    } else {
+      LOGE("Send buffer exceeded (CRSF)! (%d)", packetSize);
+    }
+  }
+}
+
+void outputGhstSensorPacket(uint8_t deviceAddr, uint8_t frameType, uint8_t* frameData, int dataLen) {
+  if (isFilterModeActive()) {
+    const int packetSize = ghstWriteSensorPacket(sendBuffer, deviceAddr, frameType, frameData, dataLen);
+    if (packetSize <= SERIALIZATION_BUFFER_SIZE) {
+      write(sendBuffer, packetSize, MODE_FILTER);
+    } else {
+      LOGE("Send buffer exceeded (GHST)! (%d)", packetSize);
     }
   }
 }

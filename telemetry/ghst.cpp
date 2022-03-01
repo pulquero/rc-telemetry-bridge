@@ -60,8 +60,10 @@ int ghstOnReceive(uint8_t b) {
 }
 
 void ghstProcessPacket(GhstPacket* packet) {
-  uint8_t addr = packet->deviceAddress();
-  switch (packet->frameType()) {
+  const uint8_t addr = packet->deviceAddress();
+  const uint8_t frameType = packet->frameType();
+  outputGhstSensorPacket(addr, frameType, packet->readData(), packet->frameSize());
+  switch (frameType) {
     case GHST_DL_LINK_STAT:
       processSensorPacket(addr, GHOST_ID_RX_RSSI, 0, -packet->read8(0));
       processSensorPacket(addr, GHOST_ID_RX_LQ, 0, packet->read8(1));
@@ -164,6 +166,10 @@ uint16_t GhstPacket::read16le(uint8_t offset) {
 
 uint32_t GhstPacket::read32le(uint8_t offset) {
   return ::read32le(buffer+DATA_OFFSET+offset);
+}
+
+uint8_t* GhstPacket::readData() {
+  return &(buffer[DATA_OFFSET]);
 }
 
 uint8_t GhstPacket::frameCrc() {

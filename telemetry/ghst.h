@@ -5,6 +5,7 @@
 void ghstBegin();
 void ghstEnd();
 int ghstOnReceive(uint8_t b);
+int ghstWriteSensorPacket(uint8_t*const out, uint8_t deviceAddr, uint8_t frameType, uint8_t* frameData, int dataLen);
 
 class GhstPacket final {
   private:
@@ -24,6 +25,7 @@ class GhstPacket final {
   uint16_t read16be(uint8_t offset);
   uint16_t read16le(uint8_t offset);
   uint32_t read32le(uint8_t offset);
+  uint8_t* readData();
   uint8_t frameCrc();
   int size();
 };
