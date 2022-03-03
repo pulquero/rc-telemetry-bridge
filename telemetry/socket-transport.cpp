@@ -2,7 +2,6 @@
 #include <WiFi.h>
 #include <AsyncTCP.h>
 
-#include "protocol.h"
 #include "socket-transport.h"
 #include "debug.h"
 
@@ -69,13 +68,13 @@ void socketStop() {
   _telemetry = nullptr;
 }
 
-void socketWrite(uint8_t* data, int len) {
+void socketWrite(const uint8_t* data, int len) {
   for (int i=0; i<MAX_CLIENTS; i++) {
     AsyncClient* client = outputClients[i];
     if (client) {
       if (client->connected()) {
         if (client->canSend()) {
-          client->write((char*)data, len);
+          client->write((const char*)data, len);
         }
       } else if (client->disconnected()) {
         client->stop();

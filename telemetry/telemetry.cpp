@@ -3,7 +3,7 @@
 #include "telemetry.h"
 #include "debug.h"
 
-void Telemetry::copyToIncoming(uint8_t* data, size_t len, SerialSource source) {
+void Telemetry::copyToIncoming(const uint8_t* data, size_t len, SerialSource source) {
   incoming.copyFrom(data, len);
   incomingSource = source;
 }
@@ -61,6 +61,12 @@ void Telemetry::load() {
   config.bt.mode = (SerialMode) preferences.getShort("btMode", MODE_DISABLED);
   loadPreferenceString(preferences, "bleName", config.ble.name, NAME_SIZE, "Telemetry BLE");
   config.ble.mode = (SerialMode) preferences.getShort("bleMode", MODE_FILTER);
+  loadPreferenceString(preferences, "soHostname", config.socket.client.hostname, NAME_SIZE);
+  config.socket.client.port = preferences.getShort("soClientPort", 9878);
+  config.socket.server.port = preferences.getShort("soServerPort", 9878);
+  config.socket.server.mode = (SerialMode) preferences.getShort("soMode", MODE_DISABLED);
+  loadPreferenceString(preferences, "nowMAC", config.espnow.mac, MAC_SIZE);
+  config.espnow.mode = (SerialMode) preferences.getShort("nowMode", MODE_DISABLED);
   loadPreferenceString(preferences, "wifiApHostname", config.wifi.ap.hostname, NAME_SIZE, "telemetry");
   loadPreferenceString(preferences, "wifiApSsid", config.wifi.ap.ssid, SSID_SIZE, "Telemetry WiFi");
   loadPreferenceString(preferences, "wifiApPassword", config.wifi.ap.password, PASSWORD_SIZE);
@@ -73,16 +79,16 @@ void Telemetry::load() {
   loadPreferenceString(preferences, "mqttBroker", config.mqtt.broker, ENDPOINT_SIZE);
   config.mqtt.port = preferences.getShort("mqttPort", 8883);
   loadPreferenceString(preferences, "mqttTopic", config.mqtt.topic, TOPIC_SIZE);
-  loadPreferenceString(preferences, "soHostname", config.socket.client.hostname, NAME_SIZE);
-  config.socket.client.port = preferences.getShort("soClientPort", 9878);
-  config.socket.server.port = preferences.getShort("soServerPort", 9878);
-  config.socket.server.mode = (SerialMode) preferences.getShort("soMode", MODE_DISABLED);
   config.internalSensors.enableHallEffect = preferences.getBool("internalSensors", true);
   preferences.end();
 
   LOGD("BT source address: '%s'", config.input.btAddress);
   LOGD("BT name: '%s'", config.bt.name);
   LOGD("BLE name: '%s'", config.ble.name);
+  LOGD("Socket client hostname: '%s'", config.socket.client.hostname);
+  LOGD("Socket client port: %d", config.socket.client.port);
+  LOGD("Socket server port: %d", config.socket.server.port);
+  LOGD("ESP-NOW MAC: %s", config.espnow.mac);
   LOGD("WiFi AP hostname: '%s'", config.wifi.ap.hostname);
   LOGD("WiFi AP SSID: '%s'", config.wifi.ap.ssid);
   LOGD("WiFi AP password: '%s'", config.wifi.ap.password);
@@ -94,9 +100,6 @@ void Telemetry::load() {
   LOGD("MQTT broker: '%s'", config.mqtt.broker);
   LOGD("MQTT port: %d", config.mqtt.port);
   LOGD("MQTT topic: '%s'", config.mqtt.topic);
-  LOGD("Socket client hostname: '%s'", config.socket.client.hostname);
-  LOGD("Socket client port: %d", config.socket.client.port);
-  LOGD("Socket server port: %d", config.socket.server.port);
 }
 
 void Telemetry::save() {
@@ -115,6 +118,12 @@ void Telemetry::save() {
   preferences.putShort("btMode", config.bt.mode);
   preferences.putString("bleName", config.ble.name);
   preferences.putShort("bleMode", config.ble.mode);
+  preferences.putString("soHostname", config.socket.client.hostname);
+  preferences.putShort("soClientPort", config.socket.client.port);
+  preferences.putShort("soServerPort", config.socket.server.port);
+  preferences.putShort("soMode", config.socket.server.mode);
+  preferences.putString("nowMAC", config.espnow.mac);
+  preferences.putShort("nowMode", config.espnow.mode);
   preferences.putString("wifiApHostname", config.wifi.ap.hostname);
   preferences.putString("wifiApSsid", config.wifi.ap.ssid);
   preferences.putString("wifiApPassword", config.wifi.ap.password);
@@ -127,10 +136,6 @@ void Telemetry::save() {
   preferences.putString("mqttBroker", config.mqtt.broker);
   preferences.putShort("mqttPort", config.mqtt.port);
   preferences.putString("mqttTopic", config.mqtt.topic);
-  preferences.putString("soHostname", config.socket.client.hostname);
-  preferences.putShort("soClientPort", config.socket.client.port);
-  preferences.putShort("soServerPort", config.socket.server.port);
-  preferences.putShort("soMode", config.socket.server.mode);
   preferences.putBool("internalSensors", config.internalSensors.enableHallEffect);
   preferences.end();
 }

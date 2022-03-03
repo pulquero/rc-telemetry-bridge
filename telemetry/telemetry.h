@@ -10,7 +10,7 @@
 #define strncpy_s(dst, src, n) strncpy(dst, src, n);dst[n-1] = '\0';
 
 enum SerialSource {
-  SOURCE_NONE, SOURCE_UART, SOURCE_BLE, SOURCE_SOCKET
+  SOURCE_NONE, SOURCE_UART, SOURCE_BLE, SOURCE_SOCKET, SOURCE_ESPNOW
 };
 
 enum TelemetryProtocol {
@@ -25,6 +25,7 @@ enum SerialMode {
 #define SSID_SIZE 32
 #define PASSWORD_SIZE 64
 #define NAME_SIZE 16
+#define MAC_SIZE 18
 #define BD_ADDR_SIZE 18
 #define URL_SIZE 128
 #define API_KEY_SIZE 128
@@ -51,6 +52,20 @@ typedef struct {
   struct {
     struct {
       char hostname[NAME_SIZE] = {'\0'};
+      uint16_t port;
+    } client;
+    struct {
+      uint16_t port;
+      SerialMode mode;
+    } server;
+  } socket;
+  struct {
+    char mac[MAC_SIZE] = {'\0'};
+    SerialMode mode;
+  } espnow;
+  struct {
+    struct {
+      char hostname[NAME_SIZE] = {'\0'};
       char ssid[SSID_SIZE] = {'\0'};
 // password must be at least 8 chars
       char password[PASSWORD_SIZE] = {'\0'};
@@ -74,16 +89,6 @@ typedef struct {
     char topic[TOPIC_SIZE] = {'\0'};
   } mqtt;
   struct {
-    struct {
-      char hostname[NAME_SIZE] = {'\0'};
-      uint16_t port;
-    } client;
-    struct {
-      uint16_t port;
-      SerialMode mode;
-    } server;
-  } socket;
-  struct {
     bool enableHallEffect;
   } internalSensors;
 } config_t;
@@ -96,7 +101,7 @@ class Telemetry final {
   Buffer<uint8_t,INCOMING_CAPACITY> incoming;
   SerialSource incomingSource;
 
-  void copyToIncoming(uint8_t* data, size_t len, SerialSource source);
+  void copyToIncoming(const uint8_t* data, size_t len, SerialSource source);
   Sensor* updateSensor(uint8_t physicalId, uint16_t sensorId, uint8_t subId, uint32_t sensorData, SensorDataType sensorDataType);
   Sensor* getSensor(uint8_t physicalId, uint16_t sensorId, uint8_t subId);
   void load();

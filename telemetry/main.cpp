@@ -33,6 +33,7 @@
 #include "web.h"
 #include "mqtt-transport.h"
 #include "socket-transport.h"
+#include "espnow-transport.h"
 
 #include "debug.h"
 
@@ -85,7 +86,7 @@ static Telemetry telemetry;
 
 static uint8_t sendBuffer[SERIALIZATION_BUFFER_SIZE];
 
-static void write(uint8_t* data, int len, SerialMode mode);
+static void write(const uint8_t* data, int len, SerialMode mode);
 static void checkButtons(uint32_t ms);
 static bool handleButton(uint8_t buttonId);
 static bool startWiFiAP();
@@ -300,7 +301,7 @@ void setup() {
   LOGMEM("post-setup");
 }
 
-void bleWrite(uint8_t* data, int len, SerialMode mode) {
+void bleWrite(const uint8_t* data, int len, SerialMode mode) {
   static Buffer<uint8_t,BLE_BUFFER_SIZE> bleBuffer;
   if (mode == MODE_FILTER) {
     // send complete telemetry packets
@@ -334,7 +335,7 @@ void bleWrite(uint8_t* data, int len, SerialMode mode) {
   }
 }
 
-void write(uint8_t* data, int len, SerialMode mode) {
+void write(const uint8_t* data, int len, SerialMode mode) {
 #ifndef DEBUG
   if (telemetry.config.usb.mode == mode) {
     if (mode == MODE_FILTER && telemetry.config.input.protocol == PROTOCOL_SMART_PORT) {
@@ -362,6 +363,9 @@ void write(uint8_t* data, int len, SerialMode mode) {
 #endif
   if (telemetry.config.socket.server.mode == mode) {
     socketWrite(data, len);
+  }
+  if (telemetry.config.espnow.mode == mode) {
+    espnowWrite(data, len);
   }
 }
 
@@ -548,6 +552,7 @@ bool startWiFiAP() {
     WiFi.softAPConfig(localHost, gateway, subnet);
     webBegin(&telemetry);
     socketBegin(&telemetry);
+    espnowBegin(&telemetry);
     LOGD("Started WiFi AP: mode %d", WiFi.getMode());
     return true;
   } else {
@@ -565,6 +570,7 @@ bool startWiFiSTA() {
     mqttBegin(&telemetry);
     webBegin(&telemetry);
     socketBegin(&telemetry);
+    espnowBegin(&telemetry);
     LOGD("Started WiFi station: mode %d (status %d)", WiFi.getMode(), status);
     return true;
   } else {
@@ -574,6 +580,7 @@ bool startWiFiSTA() {
 }
 
 bool stopWiFi() {
+  espnowStop();
   socketStop();
   webStop();
   mqttStop();
@@ -609,7 +616,8 @@ bool isFilterModeActive() {
   return (telemetry.config.usb.mode == MODE_FILTER
         || telemetry.config.bt.mode == MODE_FILTER
         || telemetry.config.ble.mode == MODE_FILTER
-        || telemetry.config.socket.server.mode == MODE_FILTER);
+        || telemetry.config.socket.server.mode == MODE_FILTER
+        || telemetry.config.espnow.mode == MODE_FILTER);
 }
 
 void outputSPortSensorPacket(uint8_t physicalId, uint16_t sensorId, uint32_t sensorData) {

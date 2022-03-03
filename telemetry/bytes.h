@@ -26,7 +26,7 @@ public:
     }
   }
 
-  void copyFrom(T* data, const int len) {
+  void copyFrom(const T* data, const int len) {
     if (len <= remaining()) {
       memcpy(newData(), data, len);
       writePos += len;
@@ -45,7 +45,7 @@ public:
     writePos += size;
   }
 
-  T* data() {
+  const T* data() {
     return &(buffer[readPos]);
   }
 

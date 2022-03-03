@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
+#include <WiFi.h>
 
 #include "protocol.h"
 #include "web.h"
@@ -136,7 +137,9 @@ static String _status = empty;
 
 const String settingsTemplateProcessor(const String& var) {
   static const String checked("checked");
-  if (var == "SOURCE_UART") {
+  if (var == "MAC") {
+    return WiFi.macAddress();
+  } else if (var == "SOURCE_UART") {
     return _telemetry->config.input.source == SOURCE_UART ? checked : empty;
   } else if (var == "SOURCE_BLE") {
     return _telemetry->config.input.source == SOURCE_BLE ? checked : empty;
@@ -190,6 +193,14 @@ const String settingsTemplateProcessor(const String& var) {
     return _telemetry->config.socket.server.mode == MODE_PASS_THRU ? checked : empty;
   } else if (var == "SOCKET_FILTER") {
     return _telemetry->config.socket.server.mode == MODE_FILTER ? checked : empty;
+  } else if (var == "ESPNOW_MAC") {
+    return _telemetry->config.espnow.mac;
+  } else if (var == "ESPNOW_DISABLED") {
+    return _telemetry->config.espnow.mode == MODE_DISABLED ? checked : empty;
+  } else if (var == "ESPNOW_PASSTHRU") {
+    return _telemetry->config.espnow.mode == MODE_PASS_THRU ? checked : empty;
+  } else if (var == "ESPNOW_FILTER") {
+    return _telemetry->config.espnow.mode == MODE_FILTER ? checked : empty;
   } else if (var == "AP_HOSTNAME") {
     return _telemetry->config.wifi.ap.hostname;
   } else if (var == "AP_SSID") {
@@ -313,6 +324,16 @@ void sendSettings(AsyncWebServerRequest* request) {
           _telemetry->config.socket.server.mode = MODE_PASS_THRU;
         } else {
           _telemetry->config.socket.server.mode = MODE_DISABLED;
+        }
+      } else if (name == "espnow_mac") {
+        strncpy_s(_telemetry->config.espnow.mac, value.c_str(), NAME_SIZE);
+      } else if (name == "espnow_mode") {
+        if (value == "filter") {
+          _telemetry->config.espnow.mode = MODE_FILTER;
+        } else if (value == "passthru") {
+          _telemetry->config.espnow.mode = MODE_PASS_THRU;
+        } else {
+          _telemetry->config.espnow.mode = MODE_DISABLED;
         }
       } else if (name == "ap_hostname") {
         strncpy_s(_telemetry->config.wifi.ap.hostname, value.c_str(), NAME_SIZE);

@@ -15,6 +15,7 @@ Input:
  - Smart port UART from FrSky R9M to ESP32 UART2.
  - Telemetry over Bluetooth (BLE), e.g. X9D+ SE.
  - Byte stream from a server socket.
+ - ESP-NOW.
 
 Output:
  - USB (compatible with Android telemetry apps).
@@ -26,6 +27,7 @@ Output:
    - WebSockets,
    - MQTT (e.g. IoT).
  - Byte stream from a server socket.
+ - ESP-NOW.
 
 ## Hardware
 

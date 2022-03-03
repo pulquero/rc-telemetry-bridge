@@ -8,6 +8,11 @@
 
 <body>
 <h1>Settings</h1>
+
+<div>
+MAC: %MAC%
+</div>
+
 <form method="post">
 
 <h2>Input</h2>
@@ -16,6 +21,7 @@ Source:
 <input type="radio" name="source" value="uart" %SOURCE_UART%>UART</input>
 <input type="radio" name="source" value="ble" %SOURCE_BLE%>BLE</input>
 <input type="radio" name="source" value="socket" %SOURCE_SOCKET%>TCP/IP socket</input>
+<input type="radio" name="source" value="espnow" %SOURCE_ESPNOW%>ESP-NOW</input>
 </div>
 <div>
 Protocol:
@@ -75,6 +81,17 @@ Mode:
 <input type="radio" name="socket_mode" value="disabled" %SOCKET_DISABLED%>Disabled</input>
 <input type="radio" name="socket_mode" value="passthru" %SOCKET_PASSTHRU%>Pass-thru</input>
 <input type="radio" name="socket_mode" value="filter" %SOCKET_FILTER%>Filter</input>
+</div>
+<h3>ESP-NOW</h3>
+<div>
+MAC:
+<input type="text" name="espnow_mac" size="18" maxlength="17" value="%ESPNOW_MAC%"/>
+</div>
+<div>
+Mode:
+<input type="radio" name="espnow_mode" value="disabled" %ESPNOW_DISABLED%>Disabled</input>
+<input type="radio" name="espnow_mode" value="passthru" %ESPNOW_PASSTHRU%>Pass-thru</input>
+<input type="radio" name="espnow_mode" value="filter" %ESPNOW_FILTER%>Filter</input>
 </div>
 
 <h2>Web</h2>
