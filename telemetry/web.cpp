@@ -150,6 +150,8 @@ const String settingsTemplateProcessor(const String& var) {
     static char szPort[6];
     itoa(_telemetry->config.socket.client.port, szPort, 10);
     return szPort;
+  } else if (var == "PROTOCOL_NATIVE") {
+    return _telemetry->config.input.protocol == PROTOCOL_NATIVE ? checked : empty;
   } else if (var == "PROTOCOL_SPORT") {
     return _telemetry->config.input.protocol == PROTOCOL_SMART_PORT ? checked : empty;
   } else if (var == "PROTOCOL_CRSF") {
@@ -252,8 +254,10 @@ void sendSettings(AsyncWebServerRequest* request) {
           newProtocol = PROTOCOL_CRSF;
         } else if (value == "ghst") {
           newProtocol = PROTOCOL_GHST;
-        } else {
+        } else if (value == "smart_port") {
           newProtocol = PROTOCOL_SMART_PORT;
+        } else {
+          newProtocol = PROTOCOL_NATIVE;
         }
         if (newProtocol != _telemetry->config.input.protocol) {
           protocolEnd();

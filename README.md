@@ -5,9 +5,10 @@
 Use an ESP32 to consume telemetry from your radio and send it over various transports.
 
 Supports the following telemetry protocols:
- -  FrSky Smart port,
+ - FrSky Smart port,
  - TBS Crossfire CRSF,
- - ImmersionRC Ghost.
+ - ImmersionRC Ghost,
+ - or pass-thru any byte stream!
 
 Input:
  - Smart port UART from FrSky compatible radio to ESP32 UART2.

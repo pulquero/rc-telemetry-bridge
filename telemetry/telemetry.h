@@ -14,7 +14,7 @@ enum SerialSource {
 };
 
 enum TelemetryProtocol {
-  PROTOCOL_SMART_PORT, PROTOCOL_CRSF, PROTOCOL_GHST
+  PROTOCOL_NATIVE, PROTOCOL_SMART_PORT, PROTOCOL_CRSF, PROTOCOL_GHST
 };
 
 enum SerialMode {
