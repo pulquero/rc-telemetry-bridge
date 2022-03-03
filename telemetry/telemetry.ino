@@ -1,3 +1,3 @@
 /**
- * See telemetry.cpp.
+ * See main.cpp.
  */
